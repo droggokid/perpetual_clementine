@@ -1,0 +1,13 @@
+{
+  "title": "Perpetual Clementine",
+  "subtitle": "Turn it. Peel it. Take a little break.",
+  "fresh": "Fresh clementine",
+  "finished": "All gone.",
+  "peels": { "one": "%1 peel strip left", "other": "%1 peel strips left" },
+  "remaining": { "one": "%1 segment left", "other": "%1 segments left" },
+  "selected": { "one": "Release to eat %1 segment", "other": "Release to eat %1 segments" },
+  "peelHint": "Pull a strip away from the fruit to peel it. Turn to reach the other side.",
+  "eatHint": "Click to eat a segment, or hold and sweep across several. Release to eat.",
+  "rotateHint": "Right-drag to turn · Arrows rotate · Space peels / eats · R resets",
+  "keyboard": "Arrow keys turn the clementine. Space removes a peel strip or eats a segment. R starts a fresh clementine. Escape cancels a gesture or closes the panel."
+}

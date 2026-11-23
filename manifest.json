@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "droggokid.perpetual-clementine",
+  "name": "Perpetual Clementine",
+  "version": "1.0.0",
+  "author": "droggokid",
+  "license": "Apache-2.0",
+  "description": "A clementine to turn, peel, and eat, one segment at a time.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Panel.qml" },
+  "barWidget": {
+    "displayName": "Perpetual Clementine",
+    "description": "An interactive, peelable clementine.",
+    "category": "Fun",
+    "defaultSection": "centerEnd",
+    "allowMultiple": false
+  }
+}

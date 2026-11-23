@@ -1,0 +1,13 @@
+{
+  "title": "Perpetual Clementine",
+  "subtitle": "Drej den. Skræl den. Tag en lille pause.",
+  "fresh": "Ny klementin",
+  "finished": "Alt er spist.",
+  "peels": { "one": "%1 strimmel skræl tilbage", "other": "%1 strimler skræl tilbage" },
+  "remaining": { "one": "%1 båd tilbage", "other": "%1 både tilbage" },
+  "selected": { "one": "Slip for at spise %1 båd", "other": "Slip for at spise %1 både" },
+  "peelHint": "Træk en strimmel væk fra frugten for at skrælle den. Drej for at nå bagsiden.",
+  "eatHint": "Klik for at spise en båd, eller hold og træk hen over flere. Slip for at spise.",
+  "rotateHint": "Højretræk for at dreje · Piletaster drejer · Mellemrum skræller / spiser · R nulstiller",
+  "keyboard": "Piletasterne drejer klementinen. Mellemrum fjerner en strimmel skræl eller spiser en båd. R giver en ny klementin. Escape annullerer en bevægelse eller lukker panelet."
+}
