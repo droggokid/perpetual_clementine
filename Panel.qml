@@ -2,7 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui as Ui
-import "FruitModel.js" as Model
+import "session"
 
 Ui.Panel {
   id: root
@@ -10,18 +10,34 @@ Ui.Panel {
   manageIpc: false
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+  readonly property var strings: ClementineSession.strings
+  readonly property var fruit: ClementineSession.fruit
 
-  Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+  function syncFruit() {
+    if (opened && panel.loadedContent) ClementineSession.attach(root, panel.loadedContent.fruitHost);
+    else ClementineSession.release(root);
+  }
+
+  onOpenedChanged: syncFruit()
+  Component.onDestruction: if (ClementineSession) ClementineSession.release(root)
 
   Ui.BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     slotSize: Style.bar.statusSlot
-    iconComponent: Component { Icon {} }
+    iconComponent: Component {
+      Icon {
+        monochrome: ClementineSession.monochromeIcon
+        monochromeColor: button.foreground
+      }
+    }
     tooltipText: strings.t("title")
     active: root.opened
-    onPressed: root.toggle()
+    onPressed: function(buttonCode) {
+      if (buttonCode === Qt.RightButton) ClementineSession.monochromeIcon = !ClementineSession.monochromeIcon;
+      else root.toggle();
+    }
   }
 
   Ui.KeyboardPanel {
@@ -31,110 +47,119 @@ Ui.Panel {
     bar: root.bar
     open: root.opened
     focusTarget: panel.loadedContent
-    contentWidth: panel.fittedContentWidth(Style.space(300))
+    contentWidth: panel.fittedContentWidth(Style.space(260))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
+    onLoadedContentChanged: root.syncFruit()
 
     content: Ui.PanelKeyCatcher {
-      anchors.fill: parent
+      property alias fruitHost: artwork
       implicitHeight: column.implicitHeight
       onCloseRequested: {
-        if (fruit.gesture !== "") fruit.cancelGesture();
+        if (fruit && fruit.gesture !== "") fruit.cancelGesture();
         else root.close();
       }
-      onMoveRequested: function(dx, dy) { fruit.moveCursor(dx !== 0 ? dx : dy); }
-      onActivateRequested: fruit.keyboardAction()
+      onMoveRequested: function(dx, dy) { if (fruit) fruit.moveCursor(dx !== 0 ? dx : dy); }
+      onActivateRequested: if (fruit) fruit.keyboardAction()
       onTabRequested: function(direction) { root.switchPanel(direction); }
-      onTextKey: function(text, modifiers) { if (text.toLowerCase() === "r") fruit.reset(); }
+      onTextKey: function(text, modifiers) {
+        if (fruit && text.toLowerCase() === "r" && !(modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))
+          fruit.reset();
+      }
 
-      Column {
-        id: column
+      component Caption: Text {
         width: parent.width
-        spacing: Style.space(10)
+        textFormat: Text.PlainText
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        color: Commons.Color.popups.text
+      }
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: strings.t("title")
-          color: Commons.Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.subtitle
-          font.weight: Font.DemiBold
-          wrapMode: Text.WordWrap
-          horizontalAlignment: Text.AlignHCenter
-        }
+      Flickable {
+        id: viewport
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: true
+        interactive: contentHeight > height
+        flickableDirection: Flickable.VerticalFlick
+        boundsBehavior: Flickable.StopAtBounds
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: strings.t("subtitle")
-          color: Qt.darker(Commons.Color.foreground, 1.45)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-        }
+        Column {
+          id: column
+          width: viewport.width
+          spacing: Style.space(4)
 
-        Item {
-          width: parent.width
-          height: Math.max(Style.space(150), Math.min(Style.space(225), panel.availableCardHeight - Style.space(220)))
+          Item {
+            id: heading
+            width: column.width
+            height: Math.max(title.height, fresh.height)
 
-          Clementine {
-            id: fruit
-            anchors.fill: parent
-            interactive: root.opened
-            animationDuration: Style.duration(220)
-            accessibleName: strings.t("title")
-            accessibleDescription: strings.t("keyboard")
+            Caption {
+              id: title
+              anchors.centerIn: parent
+              width: Math.max(1, heading.width - 2 * (fresh.width + Style.space(4)))
+              text: strings.t("title")
+              font.pixelSize: Style.font.subtitle
+              font.weight: Font.DemiBold
+            }
+            Ui.Button {
+              id: fresh
+              anchors.right: parent.right
+              anchors.top: parent.top
+              width: Style.space(24)
+              height: width
+              horizontalPadding: 0
+              verticalPadding: 0
+              iconText: "↻"
+              iconSize: Style.font.body
+              foreground: Commons.Color.popups.text
+              opacity: hot ? 1 : 0.68
+              tooltipText: strings.t("freshFruit")
+              Accessible.role: Accessible.Button
+              Accessible.name: tooltipText
+              Accessible.onPressAction: fresh.clicked()
+              onClicked: if (fruit) fruit.reset()
+            }
           }
 
-          Text {
-            anchors.centerIn: parent
-            visible: fruit.remaining === 0 && !fruit.busy
-            textFormat: Text.PlainText
-            text: strings.t("finished")
-            color: Commons.Color.foreground
-            font.family: Style.font.family
-            font.pixelSize: Style.font.heading
+          Caption {
+            id: hint
+            text: strings.t(fruit && fruit.fullyPeeled ? "eatHint" : "peelHint")
+            font.pixelSize: Style.font.caption
+            opacity: !fruit || fruit.remaining > 0 ? 0.70 : 0
           }
-        }
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          opacity: fruit.remaining > 0 ? 1 : 0
-          text: !fruit.patternChosen ? strings.t("chooseStart")
-            : fruit.selected ? strings.tn("selected", Model.count(fruit.selected)).arg(Commons.I18n.formatNumber(Model.count(fruit.selected)))
-            : fruit.fullyPeeled ? strings.tn("remaining", fruit.remaining).arg(Commons.I18n.formatNumber(fruit.remaining))
-            : strings.tn("peels", fruit.peelRemaining).arg(Commons.I18n.formatNumber(fruit.peelRemaining))
-          color: Commons.Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          horizontalAlignment: Text.AlignHCenter
+          Item {
+            id: artwork
+            width: column.width
+            readonly property real preferredHeight: Style.space(234)
+            readonly property real captionHeight: heading.height + hint.height + quip.height + total.height
+              + column.spacing * 4
+            height: panel.availableCardHeight > 0
+              ? Math.min(preferredHeight, Math.max(Style.space(96),
+                panel.availableCardHeight - panel.verticalContentInset - captionHeight))
+              : preferredHeight
 
-        }
+            Caption {
+              anchors.centerIn: parent
+              visible: !!fruit && fruit.remaining === 0 && !fruit.busy
+              text: strings.t("finished")
+            }
+          }
 
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: fruit.remaining === 0 ? strings.t("renewHint")
-            : !fruit.patternChosen ? strings.t("startHint")
-            : fruit.fullyPeeled ? strings.t("eatHint") : strings.t("peelHint")
-          color: Qt.darker(Commons.Color.foreground, 1.45)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
-        }
-
-        Text {
-          width: parent.width
-          textFormat: Text.PlainText
-          text: strings.t("keyboardHint")
-          color: Qt.darker(Commons.Color.foreground, 1.65)
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          horizontalAlignment: Text.AlignHCenter
-          wrapMode: Text.WordWrap
+          Caption {
+            id: quip
+            text: ClementineSession.quip
+            opacity: !fruit || fruit.remaining > 0 ? 0.78 : 0
+          }
+          Caption {
+            id: total
+            text: strings.tn("eatenTotal", FruitCounter.total).arg(Commons.I18n.formatNumber(FruitCounter.total))
+            font.pixelSize: Style.font.caption
+            opacity: 0.68
+          }
         }
       }
     }

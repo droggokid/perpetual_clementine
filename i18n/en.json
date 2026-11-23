@@ -1,24 +1,41 @@
 {
   "title": "Perpetual Clementine",
-  "subtitle": "A little peel. A little pause.",
-  "finished": "All gone.",
-  "peels": {
-    "one": "%1 piece of peel left",
-    "other": "%1 pieces of peel left"
-  },
-  "remaining": {
-    "one": "%1 segment left",
-    "other": "%1 segments left"
-  },
-  "selected": {
-    "one": "Release to eat %1 segment",
-    "other": "Release to eat %1 segments"
-  },
-  "peelHint": "Pull any part of the peel. A short tug settles back.",
-  "eatHint": "Click to eat a segment, or hold and sweep across several. Release to eat.",
-  "keyboardHint": "Arrows choose · Space peels / eats · R resets",
-  "keyboard": "Arrow keys choose a starting point, then a piece. Space peels or eats it. R starts a fresh clementine. Escape cancels a gesture or closes the panel.",
-  "renewHint": "Another little clementine is on its way.",
-  "chooseStart": "Where will you start?",
-  "startHint": "Start at the top, side, or bottom. Your first pull shapes the peel."
+  "peelHint": "Drag the rind to peel",
+  "eatHint": "Click or sweep to eat",
+  "freshFruit": "Fresh fruit",
+  "keyboardHelp": "Use the arrow keys to choose a piece and Space to peel or eat. Press R for a fresh fruit and Escape to cancel or close.",
+  "peeled": "Your royal snack is ready.",
+  "peeledWinter": "Winter is coming.",
+  "peeledRound": "The peel lost this round.",
+  "peeledWitnesses": "Eight wedges. No witnesses.",
+  "peeledPortions": "Portion control? Take all eight.",
+  "peeledAgain": "Caught you peeling again.",
+  "peeledChat": "The peel has left the chat.",
+  "peeledMeeting": "This meeting could've been a clementine.",
+  "peeledCouncil": "The council approves this snack.",
+  "peeledVictory": "A flawless victory against the peel.",
+  "peeledMajesty": "Your majesty, the wedges await.",
+  "peeledProphecy": "The prophecy foretold... a snack.",
+  "peeledDignity": "Citrus acquired. Dignity pending.",
+  "peeledComplaint": "The peel has filed a complaint.",
+  "peeledIncident": "Another day, another citrus incident.",
+  "peeledOrb": "The forbidden orb has been opened.",
+  "peeledVitamin": "Vitamin C has entered the chat.",
+  "peeledControl": "The peel was never in control.",
+  "peeledOperation": "Operation Vitamin C: complete.",
+  "peeledExecutable": "Peel.exe has stopped working.",
+  "peeledEvidence": "No witnesses. Just vitamins.",
+  "peeledLunch": "The citrus chose violence. You chose lunch.",
+  "peeledKingdom": "The kingdom is saved. For now.",
+  "peeledSins": "The peel died for your sins.",
+  "peeledInnocent": "Another innocent citrus. Another satisfied king.",
+  "peeledGeneva": "The Geneva Convention says nothing about fruit.",
+  "peeledWork": "Born to peel. Forced to work.",
+  "peeledCare": "This counts as self-care. Legally.",
+  "peeledEnemies": "Your enemies fear your vitamin levels.",
+  "finished": "Another one for you, king.",
+  "eatenTotal": {
+    "one": "%1 clementine eaten",
+    "other": "%1 clementines eaten"
+  }
 }

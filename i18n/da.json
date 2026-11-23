@@ -1,24 +1,41 @@
 {
   "title": "Perpetual Clementine",
-  "subtitle": "Lidt skræl. En lille pause.",
-  "finished": "Alt er spist.",
-  "peels": {
-    "one": "%1 stykke skræl tilbage",
-    "other": "%1 stykker skræl tilbage"
-  },
-  "remaining": {
-    "one": "%1 båd tilbage",
-    "other": "%1 både tilbage"
-  },
-  "selected": {
-    "one": "Slip for at spise %1 båd",
-    "other": "Slip for at spise %1 både"
-  },
-  "peelHint": "Træk i skrællen. Et kort træk glider tilbage.",
-  "eatHint": "Klik for at spise en båd, eller hold og træk hen over flere. Slip for at spise.",
-  "keyboardHint": "Piletaster vælger · Mellemrum skræller / spiser · R nulstiller",
-  "keyboard": "Piletasterne vælger et startpunkt og derefter et stykke. Mellemrum skræller eller spiser det. R giver en ny klementin. Escape annullerer en bevægelse eller lukker panelet.",
-  "renewHint": "En ny lille klementin er på vej.",
-  "chooseStart": "Hvor vil du begynde?",
-  "startHint": "Start øverst, i siden eller nederst. Dit første træk former skrællen."
+  "peelHint": "Træk i skrællen",
+  "eatHint": "Klik eller stryg for at spise",
+  "freshFruit": "Ny klementin",
+  "keyboardHelp": "Brug piletasterne til at vælge, og tryk på mellemrum for at skrælle eller spise. Tryk på R for en ny klementin og Esc for at annullere eller lukke.",
+  "peeled": "Din kongelige snack er klar.",
+  "peeledWinter": "Vinteren kommer.",
+  "peeledRound": "Skrællen tabte denne omgang.",
+  "peeledWitnesses": "Otte både. Ingen vidner.",
+  "peeledPortions": "Portionskontrol? Tag alle otte.",
+  "peeledAgain": "Så skræller du igen.",
+  "peeledChat": "Skrællen har forladt chatten.",
+  "peeledMeeting": "Det møde kunne have været en klementin.",
+  "peeledCouncil": "Rådet godkender denne snack.",
+  "peeledVictory": "En fejlfri sejr over skrællen.",
+  "peeledMajesty": "Deres majestæt, bådene venter.",
+  "peeledProphecy": "Profetien lovede... en snack.",
+  "peeledDignity": "Citrus sikret. Værdighed afventer.",
+  "peeledComplaint": "Skrællen har klaget til ledelsen.",
+  "peeledIncident": "Endnu en dag, endnu et citrusdrama.",
+  "peeledOrb": "Den forbudte kugle er åbnet.",
+  "peeledVitamin": "C-vitamin er kommet ind i chatten.",
+  "peeledControl": "Skrællen havde aldrig kontrollen.",
+  "peeledOperation": "Operation C-vitamin: fuldført.",
+  "peeledExecutable": "Skræl.exe svarer ikke længere.",
+  "peeledEvidence": "Ingen vidner. Kun vitaminer.",
+  "peeledLunch": "Citrussen valgte vold. Du valgte frokost.",
+  "peeledKingdom": "Kongeriget er reddet. Indtil videre.",
+  "peeledSins": "Skrællen døde for dine synder.",
+  "peeledInnocent": "Endnu en uskyldig citrus. Endnu en tilfreds konge.",
+  "peeledGeneva": "Genèvekonventionen nævner intet om frugt.",
+  "peeledWork": "Født til at skrælle. Tvunget til at arbejde.",
+  "peeledCare": "Det her tæller som selvforkælelse. Juridisk set.",
+  "peeledEnemies": "Dine fjender frygter dit vitaminniveau.",
+  "finished": "En til dig, konge.",
+  "eatenTotal": {
+    "one": "%1 klementin spist",
+    "other": "%1 klementiner spist"
+  }
 }
