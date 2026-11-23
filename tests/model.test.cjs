@@ -5,29 +5,36 @@ const path = require('node:path');
 const model = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../FruitModel.js'), 'utf8'), model);
 
-const peel = model.freshPeel();
-const covered = model.scene(0.12, 0.4, peel, 0, 0, 0);
-assert.equal(model.hit(covered, 0.1, 0).kind, 'peel');
-assert.equal(model.hit(covered, 2, 2), null);
-assert.equal(model.peeled(peel), false);
-
-const bare = Array(10).fill(1);
-assert.equal(model.peeled(bare), true);
-for (const yaw of [0.12, 1.2, 3, 5.7]) {
-  const faces = model.scene(yaw, 0.4, bare, 0, 0, 0);
-  for (const face of faces) {
-    assert(face.points.every(p => p.every(Number.isFinite)));
-    assert(face.alpha >= 0 && face.alpha <= 1);
+const body = model.bodyPoints();
+for (let pattern = 0; pattern < 3; pattern++) {
+  for (let variant = 0; variant < 6; variant++) {
+    const pieces = model.peelPieces(pattern, variant);
+    assert.equal(pieces.length, pattern + 3);
+    assert(pieces.every(p => p.points.length >= 3 && p.points.every(v => v.every(Number.isFinite))));
+    // Every interior sample belongs to the continuous rind before peeling.
+    for (let x = 23.37; x < 178; x += 4.13) {
+      for (let y = 45.71; y < 171; y += 4.27) {
+        if (!model.inside(body, x, y)) continue;
+        const id = model.hitPeel(pieces, 0, x, y);
+        assert(id >= 0, 'peel pieces must cover the fruit without gaps');
+        assert.notEqual(model.hitPeel(pieces, 1 << id, x, y), id, 'removed peel cannot intercept input');
+      }
+    }
+    assert.equal(model.hitPeel(pieces, (1 << pieces.length) - 1, 100, 108), -1);
   }
-  assert(faces.every((f, i) => i === 0 || f.z >= faces[i - 1].z));
-  const picked = model.hit(faces, 0.12, 0.05);
-  assert(picked && picked.kind !== 'peel');
-  const removed = model.scene(yaw, 0.4, bare, 1 << picked.id, 0, 0);
-  assert(removed.every(f => f.id !== picked.id), 'eaten segments must not render or intercept picks');
-  const selected = model.sweep(faces, -0.8, 0.1, 0.8, 0.1, 0);
-  assert(model.count(selected) >= 3, 'a fast sweep must include intervening segments');
+  for (const random of [0, 0.1, 0.5, 0.99, 1]) {
+    const next = model.nextPattern(pattern, random);
+    assert(next !== pattern && next >= 0 && next < 3, 'fresh fruit must change the peel pattern');
+  }
 }
-assert.equal(model.scene(0, 0.4, bare, model.all, 0, 0).length, 0);
-assert.equal(model.frontmost([], true), -1);
-assert.equal(model.freshPeel().join(','), '0,0,0,0,0,0,0,0,0,0');
-console.log('Geometry, picking, occlusion, rotation, and sweep checks passed.');
+for (let i = 0; i < model.segments; i++) {
+  const part = model.segment(i);
+  const x = 100 + part.dx * 43, y = 108 + part.dy * 35;
+  assert.equal(model.hitSegment(x, y, 0), i);
+  assert.notEqual(model.hitSegment(x, y, 1 << i), i);
+}
+const selected = model.sweep(35, 118, 165, 118, 0, 0);
+assert(model.count(selected) >= 2, 'a quick sweep must include intervening pieces');
+assert.equal(model.sweep(35, 118, 165, 118, model.all, 0), 0);
+assert.equal(model.hitSegment(100, 108, 0), -1, 'the centre gap is not an edible segment');
+console.log('Continuous rind coverage, pattern variety, segment picking, and sweep checks passed.');

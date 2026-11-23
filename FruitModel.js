@@ -1,168 +1,141 @@
-// Orthographic geometry shared by painting and picking. Positive z faces you.
-var segments = 10;
+// Flat artwork coordinates. Rind patterns are independent of the eight segments.
+var segments = 8;
 var all = (1 << segments) - 1;
 var tau = Math.PI * 2;
 
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
-
 function count(mask) {
-  var result = 0;
-  for (var i = 0; i < segments; i++) if (mask & (1 << i)) result++;
-  return result;
+  var n = 0;
+  for (var i = 0; i < 16; i++) if (mask & (1 << i)) n++;
+  return n;
 }
-
-function freshPeel() {
-  var result = [];
-  for (var i = 0; i < segments; i++) result.push(0);
-  return result;
+function nextPattern(previous, random) {
+  return previous < 0 ? Math.floor(clamp(random, 0, 0.999999) * 3)
+    : (previous + 1 + Math.floor(clamp(random, 0, 0.999999) * 2)) % 3;
 }
-
-function peeled(peel) {
-  return peel.every(function(value) { return value >= 1; });
-}
-
-function rotate(point, yaw, pitch) {
-  var x = point[0] * Math.cos(yaw) + point[2] * Math.sin(yaw);
-  var z = point[2] * Math.cos(yaw) - point[0] * Math.sin(yaw);
-  return [x, point[1] * Math.cos(pitch) - z * Math.sin(pitch),
-    point[1] * Math.sin(pitch) + z * Math.cos(pitch)];
-}
-
-function surface(angle, latitude, radius) {
-  var r = Math.cos(latitude) * radius;
-  return [Math.sin(angle) * r, Math.sin(latitude) * 0.84 * radius,
-    Math.cos(angle) * r];
-}
-
-function peelPoint(angle, latitude, amount) {
-  var top = latitude / Math.PI + 0.5;
-  var bend = amount * (0.2 + 0.8 * top);
-  var radius = 1.025 + Math.sin(bend * Math.PI * 0.8) * 0.9;
-  var point = surface(angle, latitude, radius);
-  // The tip rolls outward first while the lower end stays near the fruit.
-  point[1] = Math.sin(latitude) * 0.86 - amount * (0.35 + 1.45 * top);
-  return point;
-}
-
-function tint(base, light) {
-  return "rgb(" + base.map(function(c) {
-    return Math.round(clamp(c * light, 0, 255));
-  }).join(",") + ")";
-}
-
-function scene(yaw, pitch, peel, eaten, fading, fade) {
-  var faces = [];
-
-  function add(points, normal, id, kind, base, grain, alpha) {
-    var bit = 1 << id;
-    var disappearing = kind !== "peel" && (fading & bit);
-    var turned = points.map(function(point) {
-      if (disappearing) {
-        point = [point[0] * (1 - fade * 0.16),
-          point[1] * (1 - fade * 0.16) + fade * 0.25, point[2]];
-      }
-      return rotate(point, yaw, pitch);
-    });
-    var n = rotate(normal, yaw, pitch);
-    // Back faces cannot be picked through a gap in the remaining fruit.
-    if (n[2] < -0.02) return;
-    var light = 0.68 + Math.max(0, -n[0] * 0.36 + n[1] * 0.48 + n[2] * 0.7) * 0.34;
-    var z = turned.reduce(function(sum, p) { return sum + p[2]; }, 0) / turned.length;
-    faces.push({ points: turned, z: z, id: id, kind: kind,
-      color: tint(base, light + grain), grain: grain,
-      alpha: alpha * (disappearing ? 1 - fade : 1) });
+function bodyPoints() {
+  var points = [];
+  for (var i = 0; i < 96; i++) {
+    var a = i * tau / 96;
+    var x = 100 + Math.cos(a) * 78;
+    var y = 108 + Math.sin(a) * 63;
+    // A shallow dimple under the stem softens the circular silhouette.
+    if (Math.sin(a) < 0) y += 5 * Math.exp(-Math.pow((x - 100) / 18, 2));
+    points.push([x, y]);
   }
-
-  for (var id = 0; id < segments; id++) {
-    var bit = 1 << id;
-    if ((eaten & bit) && !(fading & bit)) continue;
-    var start = id * tau / segments;
-    var end = (id + 1) * tau / segments;
-    var middle = (start + end) / 2;
-    var amount = peel[id];
-    for (var row = 0; row < 16; row++) {
-      var low = -Math.PI / 2 + row * Math.PI / 16;
-      var high = low + Math.PI / 16;
-      var lat = (low + high) / 2;
-      for (var col = 0; col < 6; col++) {
-        var a = start + 0.012 + col * (end - start - 0.024) / 6;
-        var b = start + 0.012 + (col + 1) * (end - start - 0.024) / 6;
-        var angle = (a + b) / 2;
-        var normal = [Math.sin(angle) * Math.cos(lat), Math.sin(lat), Math.cos(angle) * Math.cos(lat)];
-        var grain = Math.sin(row * 43 + col * 17 + id * 71) * 0.025;
-        var radius = 0.965 + Math.sin((angle - start) / (end - start) * Math.PI) * 0.018;
-        add([surface(a, low, radius), surface(b, low, radius),
-          surface(b, high, radius), surface(a, high, radius)],
-          normal, id, "flesh", [255, 166, 64], grain, 1);
-        if (amount < 1) {
-          // Finer seams on the rind than between the exposed segments.
-          var pa = start + 0.002 + col * (end - start - 0.004) / 6;
-          var pb = start + 0.002 + (col + 1) * (end - start - 0.004) / 6;
-          add([peelPoint(pa, low, amount), peelPoint(pb, low, amount),
-            peelPoint(pb, high, amount), peelPoint(pa, high, amount)],
-            normal, id, "peel", [246, 119, 24], grain, Math.min(1, (1 - amount) * 4));
-        }
-      }
-      // Membranes close the wedge, so eating a segment exposes its neighbours.
-      for (var side = 0; side < 2; side++) {
-        var edge = side === 0 ? start + 0.012 : end - 0.012;
-        var sign = side === 0 ? -1 : 1;
-        add([[0, Math.sin(low) * 0.81, 0], surface(edge, low, 0.965),
-          surface(edge, high, 0.965), [0, Math.sin(high) * 0.81, 0]],
-          [Math.cos(edge) * sign, 0, -Math.sin(edge) * sign],
-          id, "membrane", [255, 214, 151], Math.sin(row * 13) * 0.018, 1);
-      }
+  return points;
+}
+function path(points) {
+  if (!points.length) return "";
+  function p(point) { return point[0].toFixed(2) + " " + point[1].toFixed(2); }
+  var result = "M " + p(points[0]);
+  for (var i = 1; i <= points.length; i++) {
+    var a = points[i - 1], b = points[i % points.length];
+    var dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy);
+    if (length > 18) {
+      // Both sides of a shared tear use the same gently uneven curve.
+      var sign = dx > 0 || (dx === 0 && dy > 0) ? 1 : -1;
+      var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      var bend = Math.sin(mx * 0.23 + my * 0.31) * 1.8 * sign;
+      result += " Q " + p([mx + dy / length * bend, my - dx / length * bend]) + " " + p(b);
+    } else result += " L " + p(b);
+  }
+  return result + " Z";
+}
+function clip(points, a, b, c) {
+  var out = [];
+  for (var i = 0; i < points.length; i++) {
+    var p = points[i], q = points[(i + 1) % points.length];
+    var dp = a * p[0] + b * p[1] - c, dq = a * q[0] + b * q[1] - c;
+    if (dp <= 0) out.push(p);
+    if ((dp <= 0) !== (dq <= 0)) {
+      var t = dp / (dp - dq);
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
     }
   }
-
-  if (peel[0] < 0.05 && eaten === 0) {
-    // A small calyx and leaf make the silhouette read as citrus at a glance.
-    for (var leaf = 0; leaf < 5; leaf++) {
-      var angle = leaf * tau / 5;
-      add([[0, 0.87, 0], [Math.sin(angle) * 0.13, 0.85, Math.cos(angle) * 0.13],
-        [Math.sin(angle + 0.45) * 0.06, 0.88, Math.cos(angle + 0.45) * 0.06]],
-        [0, 1, 0], 0, "leaf", [81, 112, 40], 0, 1);
-    }
-    add([[0.01, 0.88, 0], [0.17, 1.03, 0.06], [0.43, 1.01, 0.02],
-      [0.25, 0.89, -0.04]], [0, 0.8, 0.6], 0, "leaf", [89, 137, 53], 0, 1);
-  }
-
-  faces.sort(function(a, b) { return a.z - b.z; });
-  return faces;
+  return out;
 }
-
+function peelPieces(pattern, variant) {
+  var body = bodyPoints(), polygons = [];
+  var lean = variant % 2 ? -0.12 : 0.12;
+  if (pattern === 0) {
+    // Three broad ribbons, rather than longitudinal fruit-shaped strips.
+    var levels = [-1000, 89 + lean * 100, 131 + lean * 100, 1000];
+    for (var row = 0; row < 3; row++)
+      polygons.push(clip(clip(body, lean, 1, levels[row + 1]), -lean, -1, -levels[row]));
+  } else if (pattern === 1) {
+    // Four large asymmetric flaps sharing an off-centre tear.
+    for (var y = 0; y < 2; y++) {
+      for (var x = 0; x < 2; x++) {
+        var sx = x ? -1 : 1, sy = y ? -1 : 1;
+        polygons.push(clip(clip(body, sx, sx * 0.24, sx * (121 + variant % 3 * 3)),
+          -sy * 0.17, sy, sy * 91));
+      }
+    }
+  } else {
+    // Five Voronoi patches make a complete rind with irregular tear boundaries.
+    var seeds = [[77, 67], [131, 79], [99, 108], [61, 134], [132, 143]];
+    if (variant % 2) seeds = seeds.map(function(p) { return [200 - p[0], p[1]]; });
+    for (var i = 0; i < seeds.length; i++) {
+      var polygon = body.slice(), s = seeds[i];
+      for (var j = 0; j < seeds.length; j++) {
+        if (i === j) continue;
+        var q = seeds[j];
+        polygon = clip(polygon, q[0] - s[0], q[1] - s[1],
+          (q[0] * q[0] + q[1] * q[1] - s[0] * s[0] - s[1] * s[1]) / 2);
+      }
+      polygons.push(polygon);
+    }
+  }
+  return polygons.map(function(points) {
+    var cx = 0, cy = 0;
+    for (var i = 0; i < points.length; i++) { cx += points[i][0]; cy += points[i][1]; }
+    cx /= points.length; cy /= points.length;
+    return { points: points, path: path(points), cx: cx, cy: cy,
+      side: cx < 100 ? -1 : 1 };
+  });
+}
 function inside(points, x, y) {
   var result = false;
   for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
     var a = points[i], b = points[j];
-    if (((a[1] > y) !== (b[1] > y)) &&
+    if ((a[1] > y) !== (b[1] > y) &&
         x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) result = !result;
   }
   return result;
 }
-
-function hit(faces, x, y) {
-  for (var i = faces.length - 1; i >= 0; i--) {
-    var face = faces[i];
-    if (face.alpha > 0.05 && inside(face.points, x, y)) return face;
-  }
-  return null;
+function hitPeel(pieces, removed, x, y) {
+  for (var i = pieces.length - 1; i >= 0; i--)
+    if (!(removed & (1 << i)) && inside(pieces[i].points, x, y)) return i;
+  return -1;
 }
-
-function frontmost(faces, peelOnly) {
-  for (var i = faces.length - 1; i >= 0; i--) {
-    if (peelOnly ? faces[i].kind === "peel" : faces[i].kind !== "peel") return faces[i].id;
+function segment(index) {
+  var a = -Math.PI / 2 + index * tau / segments + 0.026;
+  var b = a + tau / segments - 0.052, mid = (a + b) / 2;
+  function p(angle, r) { return (100 + Math.cos(angle) * 74 * r).toFixed(2) + " " + (108 + Math.sin(angle) * 59 * r).toFixed(2); }
+  return { dx: Math.cos(mid), dy: Math.sin(mid),
+    path: "M " + p(a, 0.11) + " Q " + p(a, 0.56) + " " + p(a, 0.96)
+      + " A 74 59 0 0 1 " + p(b, 0.96) + " Q " + p(b, 0.56) + " " + p(b, 0.11)
+      + " Q 100 108 " + p(a, 0.11) + " Z",
+    fibre: "M " + p(mid, 0.35) + " Q " + p(mid + 0.035, 0.57) + " " + p(mid, 0.8) };
+}
+function hitSegment(x, y, eaten) {
+  for (var i = segments - 1; i >= 0; i--) {
+    if (eaten & (1 << i)) continue;
+    var s = segment(i);
+    var px = (x - 100 - s.dx * 5) / 74, py = (y - 108 - s.dy * 5) / 59;
+    var radius = Math.hypot(px, py);
+    var angle = (Math.atan2(py, px) + Math.PI / 2 + tau) % tau;
+    if (radius >= 0.1 && radius <= 0.99 && Math.floor(angle / (tau / segments)) === i) return i;
   }
   return -1;
 }
-
-function sweep(faces, fromX, fromY, toX, toY, selected) {
-  // Interpolate sparse mouse events so a quick sweep cannot skip a segment.
-  var steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / 0.035));
+function sweep(fromX, fromY, toX, toY, eaten, selected) {
+  var steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / 3));
   for (var i = 0; i <= steps; i++) {
     var t = i / steps;
-    var face = hit(faces, fromX + (toX - fromX) * t, fromY + (toY - fromY) * t);
-    if (face && face.kind !== "peel") selected |= 1 << face.id;
+    var id = hitSegment(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, eaten);
+    if (id >= 0) selected |= 1 << id;
   }
   return selected;
 }

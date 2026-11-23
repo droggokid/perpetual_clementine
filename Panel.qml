@@ -31,7 +31,7 @@ Ui.Panel {
     bar: root.bar
     open: root.opened
     focusTarget: panel.loadedContent
-    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentWidth: panel.fittedContentWidth(Style.space(300))
     contentHeight: panel.fittedContentHeight(panel.loadedContentHeight)
 
     content: Ui.PanelKeyCatcher {
@@ -41,7 +41,7 @@ Ui.Panel {
         if (fruit.gesture !== "") fruit.cancelGesture();
         else root.close();
       }
-      onMoveRequested: function(dx, dy) { fruit.turn(dx * 0.22, dy * 0.16); }
+      onMoveRequested: function(dx, dy) { fruit.moveCursor(dx !== 0 ? dx : dy); }
       onActivateRequested: fruit.keyboardAction()
       onTabRequested: function(direction) { root.switchPanel(direction); }
       onTextKey: function(text, modifiers) { if (text.toLowerCase() === "r") fruit.reset(); }
@@ -49,7 +49,7 @@ Ui.Panel {
       Column {
         id: column
         width: parent.width
-        spacing: Style.space(12)
+        spacing: Style.space(10)
 
         Text {
           width: parent.width
@@ -57,7 +57,7 @@ Ui.Panel {
           text: strings.t("title")
           color: Commons.Color.foreground
           font.family: Style.font.family
-          font.pixelSize: Style.font.heading
+          font.pixelSize: Style.font.subtitle
           font.weight: Font.DemiBold
           wrapMode: Text.WordWrap
           horizontalAlignment: Text.AlignHCenter
@@ -76,7 +76,7 @@ Ui.Panel {
 
         Item {
           width: parent.width
-          height: Math.max(Style.space(130), Math.min(Style.space(330), panel.availableCardHeight - Style.space(240)))
+          height: Math.max(Style.space(150), Math.min(Style.space(225), panel.availableCardHeight - Style.space(220)))
 
           Clementine {
             id: fruit
@@ -132,7 +132,7 @@ Ui.Panel {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: strings.t("rotateHint")
+          text: strings.t("keyboardHint")
           color: Qt.darker(Commons.Color.foreground, 1.65)
           font.family: Style.font.family
           font.pixelSize: Style.font.caption

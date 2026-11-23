@@ -1,17 +1,22 @@
 # Perpetual Clementine
 
-An Omarchy shell plugin with a clementine you can rotate, peel, and eat.
-It opens from a small orange in the bar, in a popup like Elsewhen.
+An Omarchy shell plugin with a small illustrated clementine you can peel and eat.
+It opens from a little orange in the bar and stays in a fixed pose.
 
 | Input | Action |
 | --- | --- |
-| Left-drag a peel strip | Pull it off; a short pull snaps back |
-| Right-drag, middle-drag, or drag the empty background | Rotate the fruit |
+| Left-drag any part of the rind | Pull it off; a short tug settles back |
 | Click a fully peeled segment | Eat it |
 | Hold and sweep over fully peeled segments | Highlight several; release to eat |
-| Arrows / Space | Rotate / remove the frontmost peel strip or segment |
+| Arrows / Space | Choose a piece / peel or eat it |
 | R / Fresh clementine | Start again |
 | Escape | Cancel the current gesture, then close |
+
+The rind begins as one continuous skin. Each fresh fruit chooses a different
+pattern from three families: broad ribbons, asymmetric flaps, and irregular
+patches. These three-to-five peel pieces are independent of the eight segments
+inside. A tug gently compresses the fruit and tilts its leaf; detached peel
+curls collect underneath, and the exposed segments spread slightly apart.
 
 Finish peeling before eating. Progress survives closing the popup within a
 shell session. Each monitor has its own fruit; restarting or reloading the
@@ -50,18 +55,19 @@ node tests/model.test.cjs
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests
 ```
 
-The tests cover mesh picking and occlusion, fast sweep selection, mouse peeling,
-snapback, rotation, eating on release, cancellation, completion, and reset.
+The tests cover continuous rind coverage, pattern variety, segment picking,
+fast sweep selection, mouse peeling, snapback, eating on release, animation
+completion, cancellation, and reset.
 Open the plugin in the shell to check theme integration and the bar popup.
 
 ## Implementation
 
-Like Elsewhen's globe, the fruit uses orthographic projection on a QML Canvas.
-The painter and mouse picker share the same depth-sorted wedge surfaces, so
-removed segments expose the membranes of the neighbouring pieces. Procedural
-surface details keep the artwork attached while rotating without texture files
-or a 3D engine. The Canvas repaints only when its state changes; the short peel
-and eating animations follow Omarchy's reduced-motion setting.
+The artwork uses flat QML Shapes and native QML animations. A small JavaScript
+helper constructs the two-dimensional paths and handles mouse picking; there
+is no rotating mesh or per-frame geometry calculation. The rind is partitioned
+independently of the segments, with matching curved tear boundaries hidden
+until peeling begins. Motion runs only in response to interaction and follows
+Omarchy's reduced-motion setting. No image assets or extra dependencies are needed.
 
 English and Danish catalogs follow the shell language live, with English as
 the fallback for other languages. All plugin text uses plain-text rendering.
