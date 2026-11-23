@@ -101,7 +101,9 @@ Ui.Panel {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: fruit.selected ? strings.tn("selected", Model.count(fruit.selected)).arg(Commons.I18n.formatNumber(Model.count(fruit.selected)))
+          opacity: fruit.remaining > 0 ? 1 : 0
+          text: !fruit.patternChosen ? strings.t("chooseStart")
+            : fruit.selected ? strings.tn("selected", Model.count(fruit.selected)).arg(Commons.I18n.formatNumber(Model.count(fruit.selected)))
             : fruit.fullyPeeled ? strings.tn("remaining", fruit.remaining).arg(Commons.I18n.formatNumber(fruit.remaining))
             : strings.tn("peels", fruit.peelRemaining).arg(Commons.I18n.formatNumber(fruit.peelRemaining))
           color: Commons.Color.foreground
@@ -114,19 +116,14 @@ Ui.Panel {
         Text {
           width: parent.width
           textFormat: Text.PlainText
-          text: fruit.fullyPeeled ? strings.t("eatHint") : strings.t("peelHint")
+          text: fruit.remaining === 0 ? strings.t("renewHint")
+            : !fruit.patternChosen ? strings.t("startHint")
+            : fruit.fullyPeeled ? strings.t("eatHint") : strings.t("peelHint")
           color: Qt.darker(Commons.Color.foreground, 1.45)
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.WordWrap
-        }
-
-        Ui.Button {
-          width: parent.width
-          text: strings.t("fresh")
-          bordered: true
-          onClicked: fruit.reset()
         }
 
         Text {

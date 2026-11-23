@@ -2,12 +2,16 @@
   "schemaVersion": 1,
   "id": "droggokid.perpetual-clementine",
   "name": "Perpetual Clementine",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "author": "droggokid",
   "license": "Apache-2.0",
-  "description": "A little illustrated clementine with animated peeling and a different rind pattern each time.",
-  "kinds": ["bar-widget"],
-  "entryPoints": { "barWidget": "Panel.qml" },
+  "description": "An illustrated clementine with animated peel patterns shaped by where you start.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
   "barWidget": {
     "displayName": "Perpetual Clementine",
     "description": "An interactive, peelable clementine.",

@@ -1,13 +1,24 @@
 {
   "title": "Perpetual Clementine",
   "subtitle": "A little peel. A little pause.",
-  "fresh": "Fresh clementine",
   "finished": "All gone.",
-  "peels": { "one": "%1 piece of peel left", "other": "%1 pieces of peel left" },
-  "remaining": { "one": "%1 segment left", "other": "%1 segments left" },
-  "selected": { "one": "Release to eat %1 segment", "other": "Release to eat %1 segments" },
+  "peels": {
+    "one": "%1 piece of peel left",
+    "other": "%1 pieces of peel left"
+  },
+  "remaining": {
+    "one": "%1 segment left",
+    "other": "%1 segments left"
+  },
+  "selected": {
+    "one": "Release to eat %1 segment",
+    "other": "Release to eat %1 segments"
+  },
   "peelHint": "Pull any part of the peel. A short tug settles back.",
   "eatHint": "Click to eat a segment, or hold and sweep across several. Release to eat.",
   "keyboardHint": "Arrows choose · Space peels / eats · R resets",
-  "keyboard": "Arrow keys choose a piece. Space peels or eats it. R starts a fresh clementine with a different peel pattern. Escape cancels a gesture or closes the panel."
+  "keyboard": "Arrow keys choose a starting point, then a piece. Space peels or eats it. R starts a fresh clementine. Escape cancels a gesture or closes the panel.",
+  "renewHint": "Another little clementine is on its way.",
+  "chooseStart": "Where will you start?",
+  "startHint": "Start at the top, side, or bottom. Your first pull shapes the peel."
 }
