@@ -1,4 +1,5 @@
 import QtQuick
+import QtTest as Test
 import Quickshell
 import Quickshell.Io
 import qs.Commons as Commons
@@ -99,6 +100,16 @@ ShellRoot {
     }
   }
 
+  Test.TestEvent { id: input }
+
+  Process {
+    id: sendKeys
+    command: ["wtype", "-s", "150", "-k", "Right", "-k", "Return", "-s", "75", "-k", "Escape"]
+    onExited: function(code) {
+      if (code !== 0) smoke.fail("Could not send test keys: wtype exited " + code);
+    }
+  }
+
   Timer {
     interval: 100
     running: true
@@ -113,7 +124,7 @@ ShellRoot {
         verify(left && right, "Both bar widgets should load");
 
         verify(!left.fruit && !right.fruit, "The fruit should load on first open");
-        left.open();
+        clickBarItem(left);
         var fruit = left.fruit;
         verify(fruit && fruit.interactive && fruit.width > 0, "The first popup should show the fruit");
         var leftArtwork = fruit.parent;
@@ -207,7 +218,7 @@ ShellRoot {
         }, function() {
           verify(right.opened && right.fruit === fruit && fruit.peeledMask === mask,
             "Changing the language should keep the current fruit and peel progress");
-          if (smoke.swaySocket) smoke.testOutputRemoval(left, right, fruit, mask, nextCounter);
+          if (smoke.swaySocket) smoke.testInputRouting(left, right, fruit, mask, nextCounter);
           else smoke.finish();
         });
       } catch (error) {
@@ -230,6 +241,25 @@ ShellRoot {
     }
   }
 
+  function clickBarItem(panel) {
+    verify(input.mouseClick(panel, panel.width / 2, panel.height / 2, Qt.LeftButton, Qt.NoModifier, 0),
+      "Qt should deliver a click to the bar window");
+    verify(panel.opened, "Clicking the bar item should open the popup");
+  }
+
+  function testInputRouting(left, right, fruit, mask, countText) {
+    right.close();
+    clickBarItem(left);
+    verify(left.fruit === fruit && fruit.peeledMask === mask, "Clicking the other bar should resume the same fruit");
+    sendKeys.running = true;
+    eventually("Arrow and Enter should peel in the focused popup, and Escape should close it", function() {
+      return !left.opened && fruit.peeledMask !== mask;
+    }, function() {
+      clickBarItem(right);
+      testOutputRemoval(left, right, fruit, fruit.peeledMask, countText);
+    });
+  }
+
   function testOutputRemoval(left, right, fruit, mask, countText) {
     verify(right.opened && rightWindow.screen.name === Quickshell.screens[1].name,
       "The active popup should be on the second output");
@@ -238,7 +268,7 @@ ShellRoot {
     eventually("Disabling the second output should destroy its popup", function() {
       return Quickshell.screens.length === 1 && !rightHost.item && !fruit.interactive;
     }, function() {
-      left.open();
+      clickBarItem(left);
       verify(left.opened && fruit.interactive && left.fruit === fruit && fruit.peeledMask === mask,
         "Reopening after disconnect should recover the same fruit");
       verify(fruit.parent.parent.children.some(item => item.text === countText),

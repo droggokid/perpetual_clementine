@@ -9,12 +9,18 @@ function count(mask) {
   for (var i = 0; i < 16; i++) if (mask & (1 << i)) n++;
   return n;
 }
-// Shape, skin and leaf proportions for four whole fruits.
-var fruits = [
-  { width: 1.04, height: 0.86, skin: "#e99531", leafX: 1.14, leafY: 0.84, leafColor: "#7ba95b", tilt: 12 },
-  { width: 0.90, height: 1.04, skin: "#f38d39", leafX: -1.18, leafY: 0.58, leafColor: "#75965a", tilt: -23 },
-  { width: 1.00, height: 0.98, skin: "#e77e35", leafX: 0.52, leafY: 0.66, leafColor: "#a1b45c", tilt: -27 },
-  { width: 0.93, height: 0.90, skin: "#f4ab3b", leafX: -1.10, leafY: 1.20, leafColor: "#91ab59", tilt: 22 }
+var fruitShapes = [
+  { width: 1.04, height: 0.86, sliceOffsets: [0, -1, 2, 0] },
+  { width: 0.90, height: 1.04, sliceOffsets: [1, 4, 0, -2] },
+  { width: 1.00, height: 0.98, sliceOffsets: [-2, -3, 1, 1] },
+  { width: 0.93, height: 0.90, sliceOffsets: [0, 3, 4, 2] }
+];
+var rindColors = ["#e99531", "#f38d39", "#e77e35", "#f4ab3b"];
+var stemStyles = [
+  { leafX: 1.14, leafY: 0.84, leafColor: "#7ba95b", tilt: 12, secondLeaf: true },
+  { leafX: -1.18, leafY: 0.58, leafColor: "#75965a", tilt: -23 },
+  { leafX: 0.52, leafY: 0.66, leafColor: "#a1b45c", tilt: -27 },
+  { leafX: -1.10, leafY: 1.20, leafColor: "#91ab59", tilt: 22 }
 ];
 function patternAtStart(x, y) {
   if (y < 83) return 1; // Open the crown in broad flaps.
@@ -22,9 +28,24 @@ function patternAtStart(x, y) {
   if (y >= 137) return 3; // A wide skirt comes off the base.
   return 2; // A lower or central start makes smaller torn patches.
 }
-function nextVariant(previous, random) {
-  return previous < 0 ? Math.floor(clamp(random, 0, 0.999999) * fruits.length)
-    : (previous + 1 + Math.floor(clamp(random, 0, 0.999999) * (fruits.length - 1))) % fruits.length;
+function nextVariant(previous, length, random) {
+  var roll = clamp(random, 0, 0.999999);
+  return previous < 0 ? Math.floor(roll * length)
+    : (previous + 1 + Math.floor(roll * (length - 1))) % length;
+}
+function nextFruitVariation(previous, random) {
+  var shape = nextVariant(previous ? previous.shape : -1, fruitShapes.length, random());
+  var remainingRinds = previous && previous.remainingRinds.length ? previous.remainingRinds.slice()
+    : rindColors.map(function(color, index) { return index; });
+  var rind = remainingRinds.splice(Math.floor(random() * remainingRinds.length), 1)[0];
+  var stem = nextVariant(previous ? previous.stem : -1, stemStyles.length, random());
+  return {
+    shape: shape,
+    rind: rind,
+    stem: stem,
+    remainingRinds: remainingRinds,
+    tearSeed: random()
+  };
 }
 function bodyPoints(variant) {
   var shape = variant || 0;
@@ -97,7 +118,7 @@ function splinePath(curve) {
     result += " Q " + p(curve[i]) + " " + p(mid(curve[i], curve[(i + 1) % curve.length]));
   return result + " Z";
 }
-function organicPoints(points, body, variant) {
+function organicPoints(points, body, variant, tearX, tearY) {
   var outer = [];
   var warped = curvedEdges(points).map(function(p) {
     var distanceSquared = 24 * 24;
@@ -112,8 +133,8 @@ function organicPoints(points, body, variant) {
     outer.push(distanceSquared < 0.0001);
     var fade = Math.sqrt(distanceSquared) / 24;
     fade = fade * fade * (3 - 2 * fade);
-    return [p[0] + fade * (Math.sin(p[1] / 18 + variant * 0.7) * 4.5),
-      p[1] + fade * (Math.sin(p[0] / 22 + variant * 0.6) * 5.5)];
+    return [p[0] + fade * (Math.sin(p[1] / 18 + variant * 0.7) * 4.5 + tearX),
+      p[1] + fade * (Math.sin(p[0] / 22 + variant * 0.6) * 5.5 + tearY)];
   });
   return { points: warped, outer: outer };
 }
@@ -197,7 +218,7 @@ function clip(points, a, b, c) {
   }
   return out;
 }
-function peelPieces(pattern, variant, startX, startY) {
+function peelPieces(pattern, variant, startX, startY, tearSeed) {
   var body = bodyPoints(variant), polygons = [];
   var anchored = typeof startX === "number" && typeof startY === "number";
   var sx = anchored ? startX : 100, sy = anchored ? startY : 108;
@@ -278,14 +299,17 @@ function peelPieces(pattern, variant, startX, startY) {
       polygons.push(polygon);
     }
   }
+  // Move shared seam points together while keeping their ends on the silhouette.
+  var tearX = tearSeed === undefined ? 0 : 5 * Math.cos(tearSeed * tau);
+  var tearY = tearSeed === undefined ? 0 : 4 * Math.sin(tearSeed * tau);
   return polygons.map(function(points) {
-    var rind = organicPoints(points, body, variant);
+    var rind = organicPoints(points, body, variant, tearX, tearY);
     points = rind.points;
     var cx = 0, cy = 0;
     for (var i = 0; i < points.length; i++) { cx += points[i][0]; cy += points[i][1]; }
     cx /= points.length; cy /= points.length;
-    return { points: points, path: path(points), texture: rindTexture(points), pith: pithSamples(points), details: rindDetails(points, rind.outer), cx: cx, cy: cy,
-      side: cx < 100 ? -1 : 1 };
+    return { points: points, path: path(points), texture: rindTexture(points), pith: pithSamples(points),
+      details: rindDetails(points, rind.outer), cx: cx, cy: cy, side: cx < 100 ? -1 : 1 };
   });
 }
 function inside(points, x, y) {
@@ -307,7 +331,7 @@ function hitPeel(pieces, removed, x, y) {
 function segment(index, variant) {
   var front = index >= 4, column = index % 4;
   var outer = column === 0 || column === 3, direction = column < 2 ? -1 : 1;
-  var rhythm = [[0, -1, 2, 0], [1, 4, 0, -2], [-2, -3, 1, 1], [0, 3, 4, 2]][variant][column];
+  var rhythm = fruitShapes[variant].sliceOffsets[column];
   var tip = (front ? [66, 90, 109, 140] : [61, 94, 117, 144])[column] + rhythm;
   var half = (front ? [26, 25, 25, 22] : [24, 27, 23, 21])[column] + rhythm * 0.4;
   var height = (front ? [47, 53, 52, 44] : [45, 54, 50, 45])[column];
@@ -356,7 +380,7 @@ function segment(index, variant) {
   return { points: points, bounds: bounds, path: splinePath(outline), pulp: pulp,
     membraneLeft: membraneLeft, membraneRight: membraneRight, dx: direction * (outer ? 1.6 : 0.5), dy: front ? 1.6 : -2 };
 }
-var lobes = fruits.map(function(fruit, variant) {
+var lobes = fruitShapes.map(function(shape, variant) {
   var pieces = [];
   for (var i = 0; i < segments; i++) pieces.push(segment(i, variant));
   return pieces;
@@ -368,9 +392,14 @@ function bite(eaten, selection) {
   return { taken: taken, eaten: next, completed: taken !== 0 && next === all };
 }
 
+function splashOriginX(piece) {
+  return (piece.bounds[0] + piece.bounds[2]) / 2 + piece.dx;
+}
+
 function juiceDrops(mask, variant) {
   var bitten = lobes[variant].filter(function(piece, index) { return (mask & (1 << index)) !== 0; });
   if (!bitten.length) return [];
+  bitten.sort(function(a, b) { return splashOriginX(a) - splashOriginX(b); });
   var flights = [
     { travelX: -34, lift: 84, size: 4.8 },
     { travelX: 9, lift: 102, size: 5.8 },
@@ -379,9 +408,9 @@ function juiceDrops(mask, variant) {
   var total = 2 + Math.floor(Math.random() * 2);
   var drops = [];
   for (var i = 0; i < total; i++) {
-    var piece = bitten[Math.floor(i * bitten.length / total)];
+    var piece = bitten[Math.round(i * (bitten.length - 1) / (total - 1))];
     var bounds = piece.bounds;
-    var x = (bounds[0] + bounds[2]) / 2 + piece.dx;
+    var x = splashOriginX(piece);
     var y = bounds[1] + (bounds[3] - bounds[1]) * 0.30 + piece.dy;
     var dropX = x + (Math.random() - 0.5) * 20;
     var dropY = y + (Math.random() - 0.5) * 12;
@@ -402,7 +431,7 @@ function juiceDrops(mask, variant) {
 }
 
 // A little central pith holds the lobes together before the first bite.
-var fleshCores = fruits.map(function(fruit, variant) {
+var fleshCores = fruitShapes.map(function(shape, variant) {
   var points = bodyPoints(variant).map(function(p) {
     return [100 + (p[0] - 100) * 0.78, 108 + (p[1] - 108) * 0.86];
   });
