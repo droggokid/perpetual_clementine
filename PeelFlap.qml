@@ -7,12 +7,14 @@ Item {
   property color rindColor: "#f6a548"
   property var frame: null
   property real fibreOpacity: 1
+  property real groundContact: 0
   width: 200
   height: 200
 
   Shape {
-    x: 1; y: root.frame ? 1.5 + root.frame.lift * 2.5 : 0
-    opacity: root.frame ? 0.16 - root.frame.lift * 0.055 : 0
+    x: 1 - root.groundContact * 0.6
+    y: root.frame ? (1.5 + root.frame.lift * 2.5) * (1 - root.groundContact) + 0.7 * root.groundContact : 0
+    opacity: root.frame ? 0.16 - root.frame.lift * 0.055 + 0.07 * root.groundContact : 0
     ShapePath {
       fillColor: "#68452d"; strokeColor: "transparent"
       PathSvg { path: root.frame ? root.frame.underside : "" }

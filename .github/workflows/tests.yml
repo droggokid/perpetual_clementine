@@ -1,0 +1,109 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    container: archlinux:base
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install test dependencies
+        run: pacman -Syu --noconfirm --needed git jq nodejs qt6-declarative quickshell sway ttf-dejavu
+
+      - name: Check out Perpetual Clementine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: plugin
+          persist-credentials: false
+
+      - name: Check out Omarchy shell components
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: omacom/omarchy
+          ref: ac2690cd7be4f47e4a255f5e2e78d904d436b068 # v4.5.0
+          path: omarchy
+          persist-credentials: false
+          sparse-checkout: |
+            bin
+            default/i18n
+            shell
+
+      - name: Validate the plugin manifest
+        run: bash omarchy/bin/omarchy-plugin-validate plugin
+
+      - name: Run model tests
+        run: node plugin/tests/model.test.cjs
+
+      - name: Run QML tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
+        run: /usr/lib/qt6/bin/qmltestrunner -input plugin/tests
+
+      - name: Run Omarchy popup smoke test
+        env:
+          OMARCHY_PATH: ${{ github.workspace }}/omarchy
+          CLEMENTINE_SMOKE_PLUGIN_DIR: ${{ github.workspace }}/plugin
+          QT_QPA_PLATFORM: wayland
+          QT_QUICK_BACKEND: software
+          WLR_BACKENDS: headless
+          WLR_HEADLESS_OUTPUTS: '2'
+          WLR_RENDERER: pixman
+        run: |
+          useradd --create-home clementine-ci
+          runuser -u clementine-ci -- bash -euo pipefail <<'SCRIPT'
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_CONFIG_HOME="$XDG_RUNTIME_DIR/config-home"
+          export XDG_STATE_HOME="$XDG_RUNTIME_DIR/state"
+          config="$XDG_RUNTIME_DIR/config"
+          mkdir -p "$config" "$XDG_CONFIG_HOME/omarchy"
+          cp "$CLEMENTINE_SMOKE_PLUGIN_DIR/tests/ShellSmoke.qml" "$config/shell.qml"
+          ln -s "$OMARCHY_PATH/shell/Commons" "$OMARCHY_PATH/shell/Ui" "$config/"
+
+          # Copy Sway without the Arch package's scheduling capability.
+          cp /usr/bin/sway "$XDG_RUNTIME_DIR/sway"
+          "$XDG_RUNTIME_DIR/sway" --config /dev/null >"$XDG_RUNTIME_DIR/sway.log" 2>&1 &
+          sway_pid=$!
+          trap 'kill "$sway_pid" 2>/dev/null || true' EXIT
+
+          for attempt in {1..50}; do
+            WAYLAND_DISPLAY=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' -print -quit)
+            sway_socket=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'sway-ipc.*.sock' -print -quit)
+            if [[ -n "$WAYLAND_DISPLAY" && -n "$sway_socket" ]] || ! kill -0 "$sway_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          if [[ -z "$WAYLAND_DISPLAY" || -z "$sway_socket" ]]; then
+            cat "$XDG_RUNTIME_DIR/sway.log"
+            exit 1
+          fi
+
+          export WAYLAND_DISPLAY
+          export CLEMENTINE_SMOKE_LANGUAGE_PATH="$XDG_CONFIG_HOME/omarchy/language"
+          expected_total=0
+          expected_icon=color
+          for language in en da; do
+            echo "Testing popup in $language with saved count $expected_total"
+            printf '%s\n' "$language" > "$CLEMENTINE_SMOKE_LANGUAGE_PATH"
+            if [[ "$language" == da ]]; then
+              export CLEMENTINE_SMOKE_SWAY_SOCKET="$sway_socket"
+            fi
+            CLEMENTINE_SMOKE_LANGUAGE="$language" CLEMENTINE_SMOKE_EXPECT_TOTAL="$expected_total" \
+              CLEMENTINE_SMOKE_EXPECT_ICON="$expected_icon" \
+              timeout 30s qs --no-color --path "$config/shell.qml"
+            expected_total=$((expected_total + 1))
+            expected_icon=monochrome
+          done
+          SCRIPT

@@ -4,13 +4,17 @@ Peel and eat a little pixel-art clementine from your Omarchy bar. The peel
 pattern changes depending on where you start, and the plugin keeps a running
 total of the clementines you finish.
 
+![Perpetual Clementine preview showing the bar widget and its popup](preview.png)
+
 ## Demo
 
-[![Perpetual Clementine being peeled and eaten](media/demo.gif)](media/screenrecording-2026-11-23_18-05-50.mp4)
+| Peeling and eating | Popup |
+| --- | --- |
+| ![Perpetual Clementine being peeled and eaten](media/demo.gif) | ![Perpetual Clementine popup with an unpeeled fruit, a reset button, and the lifetime total](media/screenshot-2026-11-23_23-32-15.png) |
 
 | Colour bar icon | Monochrome bar icon |
 | --- | --- |
-| ![Orange clementine icon in the Omarchy bar](media/screenshot-2026-11-23_17-20-42.png) | ![Monochrome clementine outline in the Omarchy bar](media/screenshot-2026-11-23_18-30-34.png) |
+| ![Orange clementine icon in the Omarchy bar](media/screenshot-2026-11-23_23-30-48.png) | ![Monochrome clementine outline in the Omarchy bar](media/screenshot-2026-11-23_23-30-59.png) |
 
 ## Install
 
@@ -29,7 +33,8 @@ release. A new clementine appears after the last bite.
 Use the arrow keys to select a spot or segment, then press Space or Enter to
 peel or eat. Press R or click the reset button for a fresh fruit. Escape
 cancels the current gesture or closes the popup. Right-click the bar icon to
-switch between colour and monochrome.
+switch between colour and monochrome on all monitors. The choice is saved
+across shell restarts.
 
 ## Remove
 
@@ -37,7 +42,7 @@ switch between colour and monochrome.
 omarchy plugin remove droggokid.perpetual-clementine
 ```
 
-Your clementine total carries over if you reinstall.
+Your clementine total and icon style carry over if you reinstall.
 
 ## Contributing
 

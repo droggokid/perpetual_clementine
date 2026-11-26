@@ -13,6 +13,7 @@ Item {
   property var peelAxis: null
   property int dropping: -1
   property real dropProgress: 0
+  property real dropSettle: 0
   property point dropDirection: Qt.point(0, 0)
   property var dropFrame: null
   property var landed: []
@@ -21,6 +22,9 @@ Item {
   property string accessibleDescription: ""
   property int pattern: -1
   property int variant: Model.nextVariant(-1, Math.random())
+  property int rindVariant: Model.nextVariant(-1, Math.random())
+  property int rindStreak: 1
+  property int leafVariant: Model.nextVariant(-1, Math.random())
   property point startPoint: Qt.point(100, 62)
   property int peeledMask: 0
   property int activePeel: -1
@@ -33,17 +37,27 @@ Item {
   property int selected: 0
   property int fading: 0
   property real fade: 0
+  property int splashing: 0
+  property real splashProgress: 0
   property int hovered: -1
   property int keyboardIndex: -1
+  property bool usingKeyboard: false
   readonly property var keyboardStarts: [[100, 62], [36, 108], [46, 134],
     [100, 153], [154, 134], [164, 108], [100, 108]]
   readonly property var fruitStyle: Model.fruits[variant]
+  readonly property color rindColor: Model.fruits[rindVariant].skin
+  readonly property var leafStyle: Model.fruits[leafVariant]
   property string gesture: ""
   property point origin: Qt.point(0, 0)
   property point previous: Qt.point(0, 0)
   readonly property bool patternChosen: pattern >= 0
   readonly property var pieces: patternChosen ? Model.peelPieces(pattern, variant, startPoint.x, startPoint.y) : []
   readonly property bool fullyPeeled: patternChosen && peeledMask === (1 << pieces.length) - 1
+  readonly property string hintKey: {
+    if (gesture === "peel" && pullPose.ready) return "releaseHint";
+    if (fullyPeeled) return usingKeyboard ? "keyboardEatHint" : "eatHint";
+    return usingKeyboard ? "keyboardPeelHint" : "peelHint";
+  }
   readonly property string corePath: fullyPeeled ? Model.remainingCorePath(variant, eaten) : ""
   readonly property int remaining: Model.segments - Model.count(eaten)
   readonly property int peelRemaining: pieces.length - Model.count(peeledMask)
@@ -69,12 +83,12 @@ Item {
     fillGradient: RadialGradient {
       centerX: 76; centerY: 84; focalX: 76; focalY: 84
       centerRadius: 103
-      GradientStop { position: 0.0; color: Qt.lighter(root.fruitStyle.skin, 1.13) }
-      GradientStop { position: 0.48; color: Qt.lighter(root.fruitStyle.skin, 1.10) }
-      GradientStop { position: 0.51; color: root.fruitStyle.skin }
-      GradientStop { position: 0.83; color: root.fruitStyle.skin }
-      GradientStop { position: 0.86; color: Qt.darker(root.fruitStyle.skin, 1.10) }
-      GradientStop { position: 1.0; color: Qt.darker(root.fruitStyle.skin, 1.15) }
+      GradientStop { position: 0.0; color: Qt.lighter(root.rindColor, 1.13) }
+      GradientStop { position: 0.48; color: Qt.lighter(root.rindColor, 1.10) }
+      GradientStop { position: 0.51; color: root.rindColor }
+      GradientStop { position: 0.83; color: root.rindColor }
+      GradientStop { position: 0.86; color: Qt.darker(root.rindColor, 1.10) }
+      GradientStop { position: 1.0; color: Qt.darker(root.rindColor, 1.15) }
     }
   }
 
@@ -157,6 +171,7 @@ Item {
     dropping = -1;
     dropFrame = null;
     dropProgress = 0;
+    dropSettle = 0;
   }
   function finishPeel() {
     var detached = activePeel >= 0 && peelTarget === 1;
@@ -201,15 +216,24 @@ Item {
   }
   function finishEating() { fading = 0; fade = 0; refreshHover(); }
   function eatSelection() {
-    var take = selected & ~eaten;
+    var bite = Model.bite(eaten, selected);
     selected = 0;
-    if (!take) return;
-    fading = take;
-    eaten |= take;
-    if (remaining === 0) fruitEaten();
+    if (!bite.taken) return;
+    fading = bite.taken;
+    eaten = bite.eaten;
+    if (bite.completed) fruitEaten();
     fade = 0;
     if (animationDuration === 0) finishEating();
-    else eatAnimation.restart();
+    else {
+      eatAnimation.restart();
+      splashProgress = 0;
+      splashing = bite.taken;
+      splashAnimation.restart();
+    }
+  }
+  function clearSplash() {
+    splashAnimation.stop();
+    splashing = 0;
   }
   function cancelGesture() {
     if (gesture === "peel") animatePeel(0);
@@ -219,6 +243,7 @@ Item {
   function finishTransition() {
     peelSettle.stop();
     eatAnimation.stop();
+    clearSplash();
     if (activePeel >= 0) finishPeel();
     dropAnimation.stop();
     arriveAnimation.stop();
@@ -230,11 +255,13 @@ Item {
     renewTimer.stop();
     peelSettle.stop();
     eatAnimation.stop();
+    clearSplash();
     dropAnimation.stop();
     arriveAnimation.stop();
     dropping = -1;
     dropFrame = null;
     dropProgress = 0;
+    dropSettle = 0;
     landed = [];
     gesture = "";
     activePeel = -1;
@@ -251,6 +278,10 @@ Item {
     pattern = -1;
     startPoint = Qt.point(100, 62);
     variant = Model.nextVariant(variant, Math.random());
+    var nextRind = Model.nextVariant(rindStreak >= 2 ? rindVariant : -1, Math.random());
+    rindStreak = nextRind === rindVariant ? rindStreak + 1 : 1;
+    rindVariant = nextRind;
+    leafVariant = Model.nextVariant(-1, Math.random());
     arrival = 1;
     if (interactive && animationDuration > 0) { arrival = 0; arriveAnimation.restart(); }
   }
@@ -264,6 +295,7 @@ Item {
         if (eaten & (1 << index)) continue;
         if (index < 4 && !(eaten & (1 << (index + 4)))) continue;
       } else if (peeledMask & (1 << index)) continue;
+      usingKeyboard = true;
       keyboardIndex = index;
       return;
     }
@@ -273,6 +305,7 @@ Item {
     if (keyboardIndex < 0) moveCursor(1);
     var index = keyboardIndex;
     if (index < 0) return;
+    usingKeyboard = true;
     keyboardIndex = -1;
     if (fullyPeeled) {
       selected = 1 << index;
@@ -305,11 +338,18 @@ Item {
     duration: Math.min(180, root.animationDuration)
     easing.type: Easing.OutCubic
   }
-  NumberAnimation {
+  SequentialAnimation {
     id: dropAnimation
-    target: root; property: "dropProgress"; from: 0; to: 1
-    duration: Math.min(155, root.animationDuration)
-    easing.type: Easing.OutCubic
+    NumberAnimation {
+      target: root; property: "dropProgress"; from: 0; to: 1
+      duration: Math.min(155, root.animationDuration)
+      easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+      target: root; property: "dropSettle"; from: 0; to: 1
+      duration: Math.min(75, root.animationDuration)
+      easing.type: Easing.OutQuad
+    }
     onFinished: root.finishDrop()
   }
   NumberAnimation {
@@ -324,6 +364,12 @@ Item {
     duration: Math.min(160, root.animationDuration)
     easing.type: Easing.OutCubic
     onFinished: root.finishEating()
+  }
+  NumberAnimation {
+    id: splashAnimation
+    target: root; property: "splashProgress"; from: 0; to: 1
+    duration: Math.min(340, root.animationDuration * 2)
+    onFinished: root.splashing = 0
   }
 
   Item {
@@ -366,8 +412,9 @@ Item {
             id: fallen
             required property int index
             frame: root.landed[index] || null
-            rindColor: root.fruitStyle.skin
+            rindColor: root.rindColor
             fibreOpacity: 0
+            groundContact: 1
             visible: frame !== null
             readonly property var pose: Model.pilePose(index)
             x: frame ? pose[0] - frame.cx : 0
@@ -445,6 +492,23 @@ Item {
         }
 
         Repeater {
+          objectName: "juiceSplash"
+          model: root.splashing ? Model.juiceDrops(root.splashing, root.variant) : []
+          delegate: Rectangle {
+            required property var modelData
+            readonly property real travel: root.splashProgress
+            width: modelData.size
+            height: width * 1.4
+            radius: width / 2
+            x: modelData.x + modelData.travelX * travel - width / 2
+            y: modelData.y - modelData.lift * travel + 62 * travel * travel - height / 2
+            rotation: modelData.travelX
+            color: "#ffe487"
+            opacity: Math.min(1, (1 - travel) * 2)
+          }
+        }
+
+        Repeater {
           model: root.pieces
           delegate: Shape {
             required property var modelData
@@ -452,7 +516,7 @@ Item {
             readonly property var movingFrame: root.activePeel === index ? root.peelFrame : null
             visible: !root.showingWhole && !(root.peeledMask & (1 << index))
             RindSurface {
-              strokeColor: root.keyboardIndex === index ? "#fff5d3" : root.fruitStyle.skin
+              strokeColor: root.keyboardIndex === index ? "#fff5d3" : root.rindColor
               strokeWidth: root.keyboardIndex === index ? 2 : 0.7
               joinStyle: ShapePath.RoundJoin
               PathSvg {
@@ -516,8 +580,8 @@ Item {
           x: 100; y: 49
           visible: root.crownPiece < 0 ? root.peeledMask === 0 : !(root.peeledMask & (1 << root.crownPiece))
           opacity: root.activePeel >= 0 && root.activePeel === root.crownPiece ? 1 - root.peelProgress : 1
-          transform: Scale { xScale: root.fruitStyle.leafX; yScale: root.fruitStyle.leafY }
-          rotation: root.fruitStyle.tilt + (root.activePeel >= 0 && root.activePeel === root.crownPiece
+          transform: Scale { xScale: root.leafStyle.leafX; yScale: root.leafStyle.leafY }
+          rotation: root.leafStyle.tilt + (root.activePeel >= 0 && root.activePeel === root.crownPiece
             ? -root.peelProgress * 24 : 0)
           Behavior on rotation { NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic } }
           ShapePath {
@@ -525,12 +589,12 @@ Item {
             PathSvg { path: "M -12 2 Q -9 -1 -4 -1 Q -7 -5 -5 -6 L -1 -3 Q -2 -9 1 -11 Q 4 -11 4 -8 L 3 -3 Q 10 -5 12 -2 L 6 0 Q 9 2 9 4 Q 3 3 0 2 Q -6 5 -12 2 Z" }
           }
           ShapePath {
-            fillColor: root.variant === 0 ? "#6f9451" : "transparent"
+            fillColor: root.leafVariant === 0 ? "#6f9451" : "transparent"
             strokeColor: "transparent"
             PathSvg { path: "M 2 0 C -5 -1 -14 -8 -17 -18 C -7 -20 0 -10 2 0 Z" }
           }
           ShapePath {
-            fillColor: root.fruitStyle.leafColor; strokeColor: "#688742"; strokeWidth: 1.8
+            fillColor: root.leafStyle.leafColor; strokeColor: "#688742"; strokeWidth: 1.8
             PathSvg { path: "M 0 0 C 2 -8 8 -18 21 -21 Q 31 -23 34 -18 C 31 -8 18 2 7 2 Q 2 2 0 0 Z" }
           }
           ShapePath {
@@ -558,14 +622,21 @@ Item {
           frame: root.dropFrame
           readonly property real fall: root.dropProgress
           readonly property real flick: 4 * fall * (1 - fall)
+          readonly property real impact: Model.clamp((fall - 0.96) / 0.04, 0, 1) * (1 - root.dropSettle)
           readonly property var pose: Model.pilePose(Math.max(0, root.dropping))
-          rindColor: root.fruitStyle.skin
+          rindColor: root.rindColor
           fibreOpacity: 0
+          groundContact: Model.clamp((fall - 0.78) / 0.22, 0, 1)
           visible: frame !== null
           x: frame ? (pose[0] - frame.cx) * fall * fall + root.dropDirection.x * 12 * flick : 0
           y: frame ? (pose[1] - frame.cy) * fall * fall + (root.dropDirection.y * 8 - 7) * flick : 0
           transform: [
-            Scale { origin.x: falling.frame ? falling.frame.cx : 0; origin.y: falling.frame ? falling.frame.cy : 0; xScale: 1 - falling.fall * 0.49; yScale: 1 - falling.fall * 0.61 },
+            Scale {
+              origin.x: falling.frame ? falling.frame.cx : 0
+              origin.y: falling.frame ? falling.frame.cy : 0
+              xScale: 1 - falling.fall * 0.49 + falling.impact * 0.025
+              yScale: 1 - falling.fall * 0.61 - falling.impact * 0.045
+            },
             Rotation { origin.x: falling.frame ? falling.frame.cx : 0; origin.y: falling.frame ? falling.frame.cy : 0; angle: falling.pose[2] * falling.fall }
           ]
         }
@@ -573,7 +644,7 @@ Item {
         PeelFlap {
           frame: root.peelProgress > 0 ? root.peelFrame : null
           visible: frame !== null
-          rindColor: root.fruitStyle.skin
+          rindColor: root.rindColor
         }
       }
     }
@@ -594,6 +665,7 @@ Item {
       if (root.inputBlocked || root.gesture !== "") return;
       var id = root.hitAt(mouse.x, mouse.y);
       if (id < 0) return;
+      root.usingKeyboard = false;
       root.keyboardIndex = -1;
       root.origin = Qt.point(mouse.x, mouse.y);
       root.previous = root.origin;
@@ -604,6 +676,7 @@ Item {
       }
     }
     onPositionChanged: function(mouse) {
+      root.usingKeyboard = false;
       if (root.gesture === "peel") {
         root.updatePull(mouse.x, mouse.y);
       } else if (root.gesture === "eat") {

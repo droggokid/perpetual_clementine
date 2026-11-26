@@ -2,14 +2,16 @@ pragma Singleton
 import QtQuick
 import qs.Commons as Commons
 import ".."
+import "QuipDeck.js" as QuipDeck
 
 Item {
   id: session
 
-  property bool monochromeIcon: false
+  readonly property bool monochromeIcon: FruitCounter.monochromeIcon
   property Item activePanel: null
   property Item fruit: null
   property alias strings: translations
+  readonly property double eatenTotal: FruitCounter.total
 
   readonly property var quipKeys: [
     "peeled", "peeledWinter", "peeledRound", "peeledWitnesses",
@@ -21,8 +23,21 @@ Item {
     "peeledKingdom", "peeledSins", "peeledInnocent",
     "peeledGeneva", "peeledWork", "peeledCare", "peeledEnemies"
   ]
-  property int quipIndex: Math.floor(Math.random() * quipKeys.length)
-  readonly property string quip: translations.t(quipKeys[quipIndex])
+  property var remainingQuips: []
+  property string quipKey: ""
+  readonly property string quip: translations.t(quipKey)
+
+  function advanceQuip() {
+    var draw = QuipDeck.draw(quipKeys, remainingQuips, quipKey, Math.random);
+    remainingQuips = draw.remaining;
+    quipKey = draw.key;
+  }
+
+  function toggleIconStyle() {
+    FruitCounter.saveIconStyle(!monochromeIcon);
+  }
+
+  Component.onCompleted: advanceQuip()
 
   function attach(panel, host) {
     if (activePanel && activePanel !== panel) activePanel.close();
@@ -52,8 +67,7 @@ Item {
       accessibleDescription: translations.t("keyboardHelp")
       onFruitEaten: {
         FruitCounter.recordFruit();
-        var next = Math.floor(Math.random() * (session.quipKeys.length - 1));
-        session.quipIndex = next < session.quipIndex ? next : next + 1;
+        session.advanceQuip();
       }
     }
   }

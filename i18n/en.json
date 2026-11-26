@@ -1,7 +1,10 @@
 {
   "title": "Perpetual Clementine",
   "peelHint": "Drag the rind to peel",
+  "releaseHint": "Release to peel",
   "eatHint": "Click or sweep to eat",
+  "keyboardPeelHint": "Space to peel",
+  "keyboardEatHint": "Space to eat",
   "freshFruit": "Fresh fruit",
   "keyboardHelp": "Use the arrow keys to choose a piece and Space to peel or eat. Press R for a fresh fruit and Escape to cancel or close.",
   "peeled": "Your royal snack is ready.",

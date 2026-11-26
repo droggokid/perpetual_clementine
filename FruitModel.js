@@ -362,6 +362,45 @@ var lobes = fruits.map(function(fruit, variant) {
   return pieces;
 });
 
+function bite(eaten, selection) {
+  var taken = selection & ~eaten;
+  var next = eaten | taken;
+  return { taken: taken, eaten: next, completed: taken !== 0 && next === all };
+}
+
+function juiceDrops(mask, variant) {
+  var bitten = lobes[variant].filter(function(piece, index) { return (mask & (1 << index)) !== 0; });
+  if (!bitten.length) return [];
+  var flights = [
+    { travelX: -34, lift: 84, size: 4.8 },
+    { travelX: 9, lift: 102, size: 5.8 },
+    { travelX: 36, lift: 76, size: 4.4 }
+  ];
+  var total = 2 + Math.floor(Math.random() * 2);
+  var drops = [];
+  for (var i = 0; i < total; i++) {
+    var piece = bitten[Math.floor(i * bitten.length / total)];
+    var bounds = piece.bounds;
+    var x = (bounds[0] + bounds[2]) / 2 + piece.dx;
+    var y = bounds[1] + (bounds[3] - bounds[1]) * 0.30 + piece.dy;
+    var dropX = x + (Math.random() - 0.5) * 20;
+    var dropY = y + (Math.random() - 0.5) * 12;
+    if (!inside(piece.points, dropX - piece.dx, dropY - piece.dy)) {
+      dropX = x;
+      dropY = y;
+    }
+    var flight = flights[i % flights.length];
+    drops.push({
+      x: dropX,
+      y: dropY,
+      travelX: flight.travelX + (x - 100) * 0.16,
+      lift: flight.lift,
+      size: flight.size
+    });
+  }
+  return drops;
+}
+
 // A little central pith holds the lobes together before the first bite.
 var fleshCores = fruits.map(function(fruit, variant) {
   var points = bodyPoints(variant).map(function(p) {

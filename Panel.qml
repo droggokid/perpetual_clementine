@@ -35,7 +35,7 @@ Ui.Panel {
     tooltipText: strings.t("title")
     active: root.opened
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) ClementineSession.monochromeIcon = !ClementineSession.monochromeIcon;
+      if (buttonCode === Qt.RightButton) ClementineSession.toggleIconStyle();
       else root.toggle();
     }
   }
@@ -62,8 +62,10 @@ Ui.Panel {
       onActivateRequested: if (fruit) fruit.keyboardAction()
       onTabRequested: function(direction) { root.switchPanel(direction); }
       onTextKey: function(text, modifiers) {
-        if (fruit && text.toLowerCase() === "r" && !(modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)))
+        if (fruit && text.toLowerCase() === "r" && !(modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+          fruit.usingKeyboard = true;
           fruit.reset();
+        }
       }
 
       component Caption: Text {
@@ -120,14 +122,19 @@ Ui.Panel {
               Accessible.role: Accessible.Button
               Accessible.name: tooltipText
               Accessible.onPressAction: fresh.clicked()
-              onClicked: if (fruit) fruit.reset()
+              onClicked: if (fruit) {
+                fruit.usingKeyboard = false;
+                fruit.reset();
+              }
             }
           }
 
           Caption {
             id: hint
-            text: strings.t(fruit && fruit.fullyPeeled ? "eatHint" : "peelHint")
+            text: strings.t(fruit ? fruit.hintKey : "peelHint")
             font.pixelSize: Style.font.caption
+            wrapMode: Text.NoWrap
+            elide: Text.ElideRight
             opacity: !fruit || fruit.remaining > 0 ? 0.70 : 0
           }
 
@@ -156,7 +163,10 @@ Ui.Panel {
           }
           Caption {
             id: total
-            text: strings.tn("eatenTotal", FruitCounter.total).arg(Commons.I18n.formatNumber(FruitCounter.total))
+            text: {
+              var count = ClementineSession.eatenTotal;
+              return strings.tn("eatenTotal", count).arg(Commons.I18n.formatNumber(count));
+            }
             font.pixelSize: Style.font.caption
             opacity: 0.68
           }

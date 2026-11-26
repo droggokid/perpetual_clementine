@@ -1,7 +1,10 @@
 {
   "title": "Perpetual Clementine",
   "peelHint": "Træk i skrællen",
+  "releaseHint": "Slip for at skrælle",
   "eatHint": "Klik eller stryg for at spise",
+  "keyboardPeelHint": "Mellemrum for at skrælle",
+  "keyboardEatHint": "Mellemrum for at spise",
   "freshFruit": "Ny klementin",
   "keyboardHelp": "Brug piletasterne til at vælge, og tryk på mellemrum for at skrælle eller spise. Tryk på R for en ny klementin og Esc for at annullere eller lukke.",
   "peeled": "Din kongelige snack er klar.",
