@@ -8,9 +8,9 @@ fruit. The plugin keeps a running total of the clementines you finish.
 
 ## Demo
 
-| Peeling and eating | Popup |
+| Gameplay demo | Popup |
 | --- | --- |
-| ![Perpetual Clementine being peeled and eaten](media/demo.gif) | ![Perpetual Clementine popup with an unpeeled fruit, a reset button, and the lifetime total](media/screenshot-2026-11-23_23-32-15.png) |
+| ![Peeling and eating clementines with different rind patterns in the Omarchy popup](media/demo.gif) | ![Perpetual Clementine popup with an unpeeled fruit, a reset button, and the lifetime total](media/screenshot-2026-11-23_23-32-15.png) |
 
 | Colour bar icon | Monochrome bar icon |
 | --- | --- |
@@ -26,9 +26,12 @@ omarchy plugin add https://github.com/droggokid/perpetual_clementine.git --yes -
 
 ## How to play
 
-Click the orange in the bar and drag the rind to peel it. Once the fruit is
-fully peeled, click a segment to eat it or hold and sweep across several, then
-release. A new clementine appears after the last bite.
+Click the orange in the bar and drag the rind to peel it. A short pull lets
+the rind settle back, so you can try a different starting spot. The first
+piece you remove sets the pattern for that fruit.
+
+Once the fruit is fully peeled, click a segment to eat it or hold and sweep
+across several, then release. A new clementine appears after the last bite.
 
 Use the arrow keys to select a spot or segment, then press Space or Enter to
 peel or eat. Press R or click the reset button for a fresh fruit. Escape
