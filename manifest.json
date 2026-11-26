@@ -16,7 +16,7 @@
     "displayName": "Perpetual Clementine",
     "description": "An interactive, peelable clementine.",
     "category": "Fun",
-    "defaultSection": "centerEnd",
+    "defaultSection": "center",
     "allowMultiple": false
   }
 }
