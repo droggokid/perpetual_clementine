@@ -2,6 +2,7 @@
 var segments = 8;
 var all = (1 << segments) - 1;
 var tau = Math.PI * 2;
+var wholeRindPattern = 5;
 
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
 function count(mask) {
@@ -9,12 +10,18 @@ function count(mask) {
   for (var i = 0; i < 16; i++) if (mask & (1 << i)) n++;
   return n;
 }
-// Shape, skin and leaf proportions for four whole fruits.
-var fruits = [
-  { width: 1.04, height: 0.86, skin: "#e99531", leafX: 1.14, leafY: 0.84, leafColor: "#7ba95b", tilt: 12 },
-  { width: 0.90, height: 1.04, skin: "#f38d39", leafX: -1.18, leafY: 0.58, leafColor: "#75965a", tilt: -23 },
-  { width: 1.00, height: 0.98, skin: "#e77e35", leafX: 0.52, leafY: 0.66, leafColor: "#a1b45c", tilt: -27 },
-  { width: 0.93, height: 0.90, skin: "#f4ab3b", leafX: -1.10, leafY: 1.20, leafColor: "#91ab59", tilt: 22 }
+var fruitShapes = [
+  { width: 1.04, height: 0.86, sliceOffsets: [0, -1, 2, 0] },
+  { width: 0.90, height: 1.04, sliceOffsets: [1, 4, 0, -2] },
+  { width: 1.00, height: 0.98, sliceOffsets: [-2, -3, 1, 1] },
+  { width: 0.93, height: 0.90, sliceOffsets: [0, 3, 4, 2] }
+];
+var rindColors = ["#e99531", "#f38d39", "#e77e35", "#f4ab3b"];
+var stemStyles = [
+  { leafX: 1.14, leafY: 0.84, leafColor: "#7ba95b", tilt: 12, secondLeaf: true },
+  { leafX: -1.18, leafY: 0.58, leafColor: "#75965a", tilt: -23 },
+  { leafX: 0.52, leafY: 0.66, leafColor: "#a1b45c", tilt: -27 },
+  { leafX: -1.10, leafY: 1.20, leafColor: "#91ab59", tilt: 22 }
 ];
 function patternAtStart(x, y) {
   if (y < 83) return 1; // Open the crown in broad flaps.
@@ -22,9 +29,24 @@ function patternAtStart(x, y) {
   if (y >= 137) return 3; // A wide skirt comes off the base.
   return 2; // A lower or central start makes smaller torn patches.
 }
-function nextVariant(previous, random) {
-  return previous < 0 ? Math.floor(clamp(random, 0, 0.999999) * fruits.length)
-    : (previous + 1 + Math.floor(clamp(random, 0, 0.999999) * (fruits.length - 1))) % fruits.length;
+function nextVariant(previous, length, random) {
+  var roll = clamp(random, 0, 0.999999);
+  return previous < 0 ? Math.floor(roll * length)
+    : (previous + 1 + Math.floor(roll * (length - 1))) % length;
+}
+function nextFruitVariation(previous, random) {
+  var shape = nextVariant(previous ? previous.shape : -1, fruitShapes.length, random());
+  var remainingRinds = previous && previous.remainingRinds.length ? previous.remainingRinds.slice()
+    : rindColors.map(function(color, index) { return index; });
+  var rind = remainingRinds.splice(Math.floor(random() * remainingRinds.length), 1)[0];
+  var stem = nextVariant(previous ? previous.stem : -1, stemStyles.length, random());
+  return {
+    shape: shape,
+    rind: rind,
+    stem: stem,
+    remainingRinds: remainingRinds,
+    tearSeed: random()
+  };
 }
 function bodyPoints(variant) {
   var shape = variant || 0;
@@ -89,15 +111,14 @@ function path(points, rounding) {
 }
 function splinePath(curve) {
   if (curve.length < 3) return "";
-  function p(point) { return point[0].toFixed(2) + " " + point[1].toFixed(2); }
   function mid(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
-  var result = "M " + p(mid(curve[curve.length - 1], curve[0]));
+  var result = "M " + linePoint(mid(curve[curve.length - 1], curve[0]));
   // A closed quadratic spline gives every tear a continuous, rounded tangent.
   for (var i = 0; i < curve.length; i++)
-    result += " Q " + p(curve[i]) + " " + p(mid(curve[i], curve[(i + 1) % curve.length]));
+    result += " Q " + linePoint(curve[i]) + " " + linePoint(mid(curve[i], curve[(i + 1) % curve.length]));
   return result + " Z";
 }
-function organicPoints(points, body, variant) {
+function organicPoints(points, body, variant, tearX, tearY) {
   var outer = [];
   var warped = curvedEdges(points).map(function(p) {
     var distanceSquared = 24 * 24;
@@ -112,8 +133,8 @@ function organicPoints(points, body, variant) {
     outer.push(distanceSquared < 0.0001);
     var fade = Math.sqrt(distanceSquared) / 24;
     fade = fade * fade * (3 - 2 * fade);
-    return [p[0] + fade * (Math.sin(p[1] / 18 + variant * 0.7) * 4.5),
-      p[1] + fade * (Math.sin(p[0] / 22 + variant * 0.6) * 5.5)];
+    return [p[0] + fade * (Math.sin(p[1] / 18 + variant * 0.7) * 4.5 + tearX),
+      p[1] + fade * (Math.sin(p[0] / 22 + variant * 0.6) * 5.5 + tearY)];
   });
   return { points: warped, outer: outer };
 }
@@ -197,13 +218,15 @@ function clip(points, a, b, c) {
   }
   return out;
 }
-function peelPieces(pattern, variant, startX, startY) {
+function peelPieces(pattern, variant, startX, startY, tearSeed) {
   var body = bodyPoints(variant), polygons = [];
   var anchored = typeof startX === "number" && typeof startY === "number";
   var sx = anchored ? startX : 100, sy = anchored ? startY : 108;
   var lean = anchored ? clamp((sy - 108) / 160 + (variant - 2.5) * 0.025, -0.24, 0.24)
     * (sx < 100 ? -1 : 1) : variant % 2 ? -0.12 : 0.12;
-  if (pattern === 0) {
+  if (pattern === wholeRindPattern) {
+    polygons.push(body);
+  } else if (pattern === 0) {
     // Three broad ribbons, rather than longitudinal fruit-shaped strips.
     var shift = anchored ? (sy - 108) * 0.12 + (variant - 2.5) * 1.5 : 0;
     var levels = [-1000, 89 + lean * 100 + shift, 131 + lean * 100 + shift, 1000];
@@ -278,14 +301,17 @@ function peelPieces(pattern, variant, startX, startY) {
       polygons.push(polygon);
     }
   }
+  // Move shared seam points together while keeping their ends on the silhouette.
+  var tearX = tearSeed === undefined ? 0 : 5 * Math.cos(tearSeed * tau);
+  var tearY = tearSeed === undefined ? 0 : 4 * Math.sin(tearSeed * tau);
   return polygons.map(function(points) {
-    var rind = organicPoints(points, body, variant);
+    var rind = organicPoints(points, body, variant, tearX, tearY);
     points = rind.points;
     var cx = 0, cy = 0;
     for (var i = 0; i < points.length; i++) { cx += points[i][0]; cy += points[i][1]; }
     cx /= points.length; cy /= points.length;
-    return { points: points, path: path(points), texture: rindTexture(points), pith: pithSamples(points), details: rindDetails(points, rind.outer), cx: cx, cy: cy,
-      side: cx < 100 ? -1 : 1 };
+    return { points: points, path: path(points), texture: rindTexture(points), pith: pithSamples(points),
+      details: rindDetails(points, rind.outer), cx: cx, cy: cy };
   });
 }
 function inside(points, x, y) {
@@ -307,7 +333,7 @@ function hitPeel(pieces, removed, x, y) {
 function segment(index, variant) {
   var front = index >= 4, column = index % 4;
   var outer = column === 0 || column === 3, direction = column < 2 ? -1 : 1;
-  var rhythm = [[0, -1, 2, 0], [1, 4, 0, -2], [-2, -3, 1, 1], [0, 3, 4, 2]][variant][column];
+  var rhythm = fruitShapes[variant].sliceOffsets[column];
   var tip = (front ? [66, 90, 109, 140] : [61, 94, 117, 144])[column] + rhythm;
   var half = (front ? [26, 25, 25, 22] : [24, 27, 23, 21])[column] + rhythm * 0.4;
   var height = (front ? [47, 53, 52, 44] : [45, 54, 50, 45])[column];
@@ -356,7 +382,7 @@ function segment(index, variant) {
   return { points: points, bounds: bounds, path: splinePath(outline), pulp: pulp,
     membraneLeft: membraneLeft, membraneRight: membraneRight, dx: direction * (outer ? 1.6 : 0.5), dy: front ? 1.6 : -2 };
 }
-var lobes = fruits.map(function(fruit, variant) {
+var lobes = fruitShapes.map(function(shape, variant) {
   var pieces = [];
   for (var i = 0; i < segments; i++) pieces.push(segment(i, variant));
   return pieces;
@@ -368,9 +394,14 @@ function bite(eaten, selection) {
   return { taken: taken, eaten: next, completed: taken !== 0 && next === all };
 }
 
+function splashOriginX(piece) {
+  return (piece.bounds[0] + piece.bounds[2]) / 2 + piece.dx;
+}
+
 function juiceDrops(mask, variant) {
   var bitten = lobes[variant].filter(function(piece, index) { return (mask & (1 << index)) !== 0; });
   if (!bitten.length) return [];
+  bitten.sort(function(a, b) { return splashOriginX(a) - splashOriginX(b); });
   var flights = [
     { travelX: -34, lift: 84, size: 4.8 },
     { travelX: 9, lift: 102, size: 5.8 },
@@ -379,9 +410,9 @@ function juiceDrops(mask, variant) {
   var total = 2 + Math.floor(Math.random() * 2);
   var drops = [];
   for (var i = 0; i < total; i++) {
-    var piece = bitten[Math.floor(i * bitten.length / total)];
+    var piece = bitten[Math.round(i * (bitten.length - 1) / (total - 1))];
     var bounds = piece.bounds;
-    var x = (bounds[0] + bounds[2]) / 2 + piece.dx;
+    var x = splashOriginX(piece);
     var y = bounds[1] + (bounds[3] - bounds[1]) * 0.30 + piece.dy;
     var dropX = x + (Math.random() - 0.5) * 20;
     var dropY = y + (Math.random() - 0.5) * 12;
@@ -402,7 +433,7 @@ function juiceDrops(mask, variant) {
 }
 
 // A little central pith holds the lobes together before the first bite.
-var fleshCores = fruits.map(function(fruit, variant) {
+var fleshCores = fruitShapes.map(function(shape, variant) {
   var points = bodyPoints(variant).map(function(p) {
     return [100 + (p[0] - 100) * 0.78, 108 + (p[1] - 108) * 0.86];
   });
@@ -426,9 +457,7 @@ function remainingCorePath(variant, eaten) {
     while (column < 4 && !(missing & (1 << column))) column++;
     var section = clip(clip(core.points, -1, 0, -coreCuts[left]), 1, 0, coreCuts[column]);
     if (section.length >= 3) {
-      result += " M " + section.map(function(p) {
-        return p[0].toFixed(2) + " " + p[1].toFixed(2);
-      }).join(" L ") + " Z";
+      result += " M " + section.map(linePoint).join(" L ") + " Z";
     }
   }
   return result;
@@ -475,282 +504,167 @@ function sweep(fromX, fromY, toX, toY, eaten, selected, variant) {
   return selected;
 }
 
-function peelAxis(piece, grabX, grabY, pullX, pullY) {
-  var tip = piece.points[0], best = Infinity, alongPull = Infinity;
-  var pullLength = Math.hypot(pullX || 0, pullY || 0);
-  var aimed = pullLength > 0;
-  if (aimed) { pullX /= pullLength; pullY /= pullLength; }
-  for (var i = 0; i < piece.points.length; i++) {
-    var a = piece.points[i], b = piece.points[(i + 1) % piece.points.length];
-    var dx = b[0] - a[0], dy = b[1] - a[1];
-    var t = clamp(((grabX - a[0]) * dx + (grabY - a[1]) * dy) / Math.max(0.001, dx * dx + dy * dy), 0, 1);
-    var p = [a[0] + dx * t, a[1] + dy * t];
-    var distance = Math.hypot(p[0] - grabX, p[1] - grabY);
-    if (distance < best) { best = distance; tip = p; }
-    if (aimed) {
-      var cross = pullX * dy - pullY * dx;
-      if (Math.abs(cross) < 0.001) continue;
-      var ax = a[0] - grabX, ay = a[1] - grabY;
-      var ray = (ax * dy - ay * dx) / cross;
-      var edge = (ax * pullY - ay * pullX) / cross;
-      if (ray >= 0 && edge >= 0 && edge <= 1) alongPull = Math.min(alongPull, ray);
-    }
+// Measure in fruit coordinates, with u pointing from the slit into the rind.
+function peelAxis(piece, x, y, dx, dy, wholeRind) {
+  if (dx === undefined) {
+    dx = x - 100; dy = y - 108;
+    if (Math.hypot(dx, dy) < 1) { dx = 0; dy = -1; }
   }
-  // Prefer an edge in the direction of the pull when it is still near the grab.
-  if (alongPull <= best + 18) tip = [grabX + pullX * alongPull, grabY + pullY * alongPull];
-  var ux = grabX - tip[0], uy = grabY - tip[1];
-  if (Math.hypot(ux, uy) < 1 || !inside(piece.points, grabX, grabY)) {
-    ux = piece.cx - tip[0]; uy = piece.cy - tip[1];
+  var size = Math.hypot(dx, dy);
+  dx /= size; dy /= size;
+  var sign = (piece.cx - x) * dx + (piece.cy - y) * dy < 0 ? -1 : 1;
+  var axis = { tip: [x, y], ux: sign * dx, uy: sign * dy, pullX: dx, pullY: dy };
+  // Retain the section edges that trim the starting slit. A slow pull can then
+  // widen this same slit into the whole fruit, even when pressed beside a seam.
+  var planes = [[-1, 0, 0], [1, 0, 14], [0, 1, 5.6], [0, -1, 5.6],
+    [0.6, 1, 11.2], [0.6, -1, 11.2], [-0.5, 1, 3.9], [-0.5, -1, 3.9]];
+  var slit = piece.points.map(function(p) { return peelLocal(axis, p); });
+  for (var plane of planes) slit = clip(slit, plane[0], plane[1], plane[2]);
+  for (var i = 0; i < slit.length; i++) {
+    var a = slit[i], b = slit[(i + 1) % slit.length];
+    if (planes.some(function(plane) {
+      return Math.abs(a[0] * plane[0] + a[1] * plane[1] - plane[2]) < 0.001 &&
+        Math.abs(b[0] * plane[0] + b[1] * plane[1] - plane[2]) < 0.001;
+    })) continue;
+    var nx = b[1] - a[1], ny = a[0] - b[0], length = Math.hypot(nx, ny);
+    if (length < 0.001) continue;
+    nx /= length; ny /= length;
+    var limit = nx * a[0] + ny * a[1];
+    // The press lies on the inside of each retained edge.
+    planes.push(limit >= 0 ? [nx, ny, limit] : [-nx, -ny, -limit]);
   }
-  var length = Math.hypot(ux, uy);
-  if (length < 0.001) { ux = 0; uy = 1; length = 1; }
-  ux /= length; uy /= length;
-
-  // In these coordinates a shallow V-shaped front cuts around the grab.
-  // Split edges crossing the V's apex before shearing so both halves meet.
-  var local = [], slope = 0.65;
-  function project(p) {
-    var x = p[0] - tip[0], y = p[1] - tip[1];
-    return [x * ux + y * uy, -x * uy + y * ux];
-  }
-  function shear(p) { return [p[0] + slope * Math.abs(p[1]), p[1]]; }
-  function markLines(lines) {
-    var previous = null;
-    return lines.map(function(line) {
-      var stroke = {
-        start: shear(project(line[0])), end: shear(project(line[1])),
-        move: " M " + linePoint(line[0]), draw: " L " + linePoint(line[1]),
-        continuous: previous === line[0]
-      };
-      previous = line[1];
-      return stroke;
-    });
-  }
-  var projected = piece.points.map(project);
-  for (var j = 0; j < projected.length; j++) {
-    var p = projected[j], q = projected[(j + 1) % projected.length];
-    local.push(shear(p));
-    if (p[1] * q[1] < 0) local.push([(p[0] * q[1] - q[0] * p[1]) / (q[1] - p[1]), 0]);
-  }
-  var projections = local.map(function(p) { return p[0]; });
-  var pith = piece.pith.map(project).map(shear);
-  var rind = piece.texture.marks.map(function(mark) {
-    return { dark: mark[2] < 2, attached: stipple(mark[0], mark[1], mark[2]),
-      bent: shear(project(mark)) };
+  axis.slit = planes;
+  return fitPeel(axis, piece, wholeRind);
+}
+function peelLocal(axis, p) {
+  var x = p[0] - axis.tip[0], y = p[1] - axis.tip[1];
+  return [x * axis.ux + y * axis.uy, y * axis.ux - x * axis.uy];
+}
+function fitPeel(axis, piece, wholeRind) {
+  var local = piece.points.map(function(p) { return peelLocal(axis, p); });
+  var planes = axis.slit.map(function(plane) {
+    var end = Math.max.apply(null, local.map(function(p) { return p[0] * plane[0] + p[1] * plane[1]; }));
+    return [plane[0], plane[1], plane[2], end];
   });
-  // Keep the attachment axis local to the grab, but translate the lifted
-  // material along the pull, including when the nearest seam faces away.
-  var along = aimed ? 0.43 * (pullX * ux + pullY * uy) : -0.43;
-  var across = aimed ? 0.43 * (-pullX * uy + pullY * ux) : 0;
-  return { ux: ux, uy: uy, tip: tip, slope: slope, local: local, pith: pith, rind: rind,
-    grab: shear(project([grabX, grabY])),
-    rim: markLines(piece.details.rim), shine: markLines(piece.details.shine),
-    along: along, across: across,
-    min: Math.min.apply(null, projections), max: Math.max.apply(null, projections) };
+  return Object.assign({}, axis, { piece: piece, local: local, planes: planes, wholeRind: !!wholeRind });
 }
 function pullPose(axis, distance, dx, dy) {
-  var reach = clamp((axis.max - axis.min) * 0.5, 26, 48);
-  var pull = Math.max(0, distance - 4) / reach;
-  // Open the lip quickly, then let the tear feel firmer as it reaches the hinge.
-  var amount = pull < 0.24 ? pull * 1.12
-    : pull < 1 ? 0.269 + 0.571 * (pull - 0.24) / 0.76
-    : 0.84 + 0.07 * clamp((pull - 1) / 0.28, 0, 1);
-  return { amount: amount, distance: distance, x: dx, y: dy, ready: pull >= 1 };
+  var reverse = clamp((-dx * axis.pullX - dy * axis.pullY - 0.1) / 0.6, 0, 1);
+  var travel = Math.max(0, distance - 4) * (1 - reverse * reverse * (3 - 2 * reverse));
+  var reach = axis.wholeRind ? 68 : 44;
+  // Both modes draw exactly the same slit during the slow-gesture decision window.
+  var amount = travel <= 20 ? 0.32 * travel / 20
+    : 0.32 + 0.58 * clamp((travel - 20) / (reach - 20), 0, 1);
+  return { amount: amount, distance: Math.min(distance, travel + 4), x: dx, y: dy, ready: travel >= reach };
 }
 
 function pilePose(index) {
   return [[58, 198, -24], [91, 204, 15], [132, 200, 25], [78, 209, -9], [116, 207, -17]][index];
 }
 
-function peelFrame(piece, amount, axis, pose) {
-  amount = clamp(amount, 0, 1);
-  var ux = axis.ux, uy = axis.uy, vx = -uy, vy = ux;
-  var along = axis.along, across = axis.across;
-  var alongPull = pose ? pose.x * ux + pose.y * uy : 0;
-  var acrossPull = pose ? pose.x * vx + pose.y * vy : 0;
-  if (pose) {
-    along = 0.43 * alongPull;
-    across = 0.43 * acrossPull;
+function peelFrame(piece, amount, axis, pose, surface) {
+  surface = surface || piece;
+  var opening = Math.min(1, amount / 0.32);
+  var spread = clamp((amount - 0.32) / 0.68, 0, 1);
+  var lifted = amount > 0 ? axis.local : [];
+  var cuts = axis.planes.map(function(plane) {
+    var limit = opening * plane[2] + spread * (plane[3] - plane[2]);
+    lifted = clip(lifted, plane[0], plane[1], limit);
+    return [plane[0], plane[1], limit];
+  });
+  if (amount === 1) lifted = axis.local;
+  function world(p) {
+    return [axis.tip[0] + p[0] * axis.ux - p[1] * axis.uy,
+      axis.tip[1] + p[0] * axis.uy + p[1] * axis.ux];
   }
-  var length = (axis.max - axis.min) * amount;
-  var front = axis.min + length;
-  var attached = amount >= 1 ? [] : clip(axis.local, -1, 0, -front);
-  var lifted = amount <= 0 ? [] : clip(axis.local, 1, 0, front);
-  function world(s, v) {
-    var u = s - axis.slope * Math.abs(v);
-    return [axis.tip[0] + u * ux + v * vx, axis.tip[1] + u * uy + v * vy];
+  function clearance(p) {
+    var d = Infinity;
+    for (var cut of cuts) d = Math.min(d, cut[2] - cut[0] * p[0] - cut[1] * p[1]);
+    return d;
   }
-  function unfold(points) {
-    var out = [];
-    for (var i = 0; i < points.length; i++) {
-      var a = points[i], b = points[(i + 1) % points.length];
-      out.push(world(a[0], a[1]));
-      if (a[1] * b[1] < 0) out.push(world((a[0] * b[1] - b[0] * a[1]) / (b[1] - a[1]), 0));
-    }
-    return out;
-  }
-  // A shallow bend can flatten or lengthen with the pull. Its free edge
-  // always stays beyond the hinge in sheet coordinates.
-  var bow = 0.12 + amount * 0.08;
-  var extension = 1.10 - along * 0.6;
-  var gripDepth = front - axis.grab[0];
-  var gripTravel = pose && pose.distance > 4
-    ? (pose.distance - 4) * Math.min(1, amount / pose.amount) : 0;
-  if (gripTravel > 0 && gripDepth > 3) {
-    // Once the tear reaches the grab, bias the free sheet toward that same point
-    // on the mouse path. Taper by depth so the attached edge never slides.
-    var follow = Math.min(gripTravel * 0.68, 22);
-    var desiredV = axis.grab[1] + acrossPull * follow;
-    var desiredS = axis.grab[0] + alongPull * follow
-      + axis.slope * (Math.abs(desiredV) - Math.abs(axis.grab[1]));
-    var desiredExtension = (front - desiredS) / gripDepth + bow * gripDepth / length;
-    var weight = clamp((gripDepth - 3) / 18, 0, 0.96);
-    extension += (clamp(desiredExtension, 0.65, 1.65) - extension) * weight;
-    across += (clamp((desiredV - axis.grab[1]) / gripDepth, -0.55, 0.55) - across) * weight;
-  }
-  function xy(p) { return p[0].toFixed(2) + " " + p[1].toFixed(2); }
-  // Leave the fruit and hinge alone, easing only excursions past its edges.
-  function softBound(value, low, high, min, max) {
-    if (value < low) return low - (low - value) / (1 + (low - value) / (low - min));
-    if (value > high) return high + (value - high) / (1 + (value - high) / (max - high));
-    return value;
+  var exposedPoints = lifted.map(world);
+  var exposed = amount === 1 ? piece.path : path(exposedPoints);
+  var attached = amount === 1 && surface === piece ? "" : surface.path + " " + exposed;
+
+  var hinge = lifted.reduce(function(best, p) { return p[0] > best[0] ? p : best; }, [0, 0]);
+  var depth = Math.max(0.001, hinge[0]);
+  var travel = pose && pose.amount > 0 ? pose.distance * Math.min(1, amount / pose.amount) : 0;
+  var reach = axis.wholeRind ? 72 : 48;
+  var extra = Math.max(0, travel - reach);
+  travel = Math.min(travel, reach) + 8 * extra / (8 + extra);
+  // The last tenth is the release animation. Let the freed sheet curl back.
+  var release = clamp((amount - 0.9) / 0.1, 0, 1);
+  travel += (Math.min(travel, depth * 0.3, 14) - travel) * release;
+  var tx = (pose ? pose.x : axis.pullX) * travel, ty = (pose ? pose.y : axis.pullY) * travel;
+  // Ease only the part of a long pull that would leave the pixel-art layer.
+  function bound(n, low, high, pad) {
+    if (n < low) return low - pad * (low - n) / (pad + low - n);
+    if (n > high) return high + pad * (n - high) / (pad + n - high);
+    return n;
   }
   function bend(p) {
-    var d = Math.max(0, front - p[0]);
-    // Even at full depth the bow cannot reverse the order of material points.
-    var depth = length > 0 ? clamp(d / length, 0, 1) : 0;
-    var position = front - d * (extension - bow * depth);
-    var screen = world(position, p[1] + across * d);
-    return [softBound(screen[0], 14, 186, -24, 224),
-      softBound(screen[1], 36, 174, 15, 203)];
+    var t = clamp(p[0] / depth, 0, 1);
+    var weight = t <= 0.4 ? 1 : t < 0.75 ? 1 - (t - 0.4) * (0.92 / 0.35) : 0.32 * (1 - t);
+    var at = world(p);
+    var arch = Math.sin(Math.PI * t) * Math.min(depth * 0.18, 9) * Math.min(1, travel / 12 + release);
+    return [bound(at[0] + tx * weight, 7, 193, 22),
+      bound(at[1] + ty * weight - arch, 34, 176, 19)];
   }
-  function curled(points) {
-    // Extra points follow the curved sheet instead of stretching its corners.
-    var out = [];
-    for (var i = 0; i < points.length; i++) {
-      var a = points[i], b = points[(i + 1) % points.length];
-      var steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 4));
-      for (var j = 0; j < steps; j++) {
-        var t = j / steps;
-        out.push(bend([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]));
-        if (a[1] * b[1] < 0) {
-          var centre = a[1] / (a[1] - b[1]);
-          if (centre > t && centre < (j + 1) / steps)
-            out.push(bend([a[0] + (b[0] - a[0]) * centre, 0]));
-        }
-      }
-    }
-    return out;
-  }
-  var flap = curled(lifted);
-  var seam = [];
-  for (var i = 0; i < axis.local.length; i++) {
-    var a = axis.local[i], b = axis.local[(i + 1) % axis.local.length];
-    var da = a[0] - front, db = b[0] - front;
-    if ((da <= 0) !== (db <= 0)) {
-      var t = da / (da - db);
-      seam.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-    }
-  }
-  var rim = "", fibres = "", marks = "";
-  var taut = Boolean(pose && pose.ready && amount < 0.99);
-  seam.sort(function(a, b) { return a[1] - b[1]; });
-  var nearestStrand = -1, strandDistance = Infinity;
-  if (taut) {
-    for (var i = 0; i + 1 < seam.length; i += 2) {
-      var distance = Math.abs((seam[i][1] + seam[i + 1][1]) / 2 - axis.grab[1]);
-      if (distance < strandDistance) { nearestStrand = i; strandDistance = distance; }
-    }
-  }
-  function seamPath(a, b) {
-    var edge = [world(a[0], a[1])];
-    if (a[1] * b[1] < 0) edge.push(world(a[0], 0));
-    edge.push(world(b[0], b[1]));
-    return " M " + edge.map(xy).join(" L ");
-  }
-  for (var i = 0; i + 1 < seam.length && amount > 0 && amount < 1; i += 2) {
-    var start = seam[i], end = seam[i + 1];
-    rim += seamPath(start, end);
-    // Gather the pith into a single bright strand as the last hinge stretches.
-    if (taut && i === nearestStrand) {
-      var v = start[1] + (end[1] - start[1]) * 0.5;
-      var depth = Math.min(22, length * 0.42);
-      var under = world(front - depth * 0.24, v), above = bend([front - depth, v]);
-      fibres += " M " + xy(under) + " Q " + xy([(under[0] + above[0]) / 2,
-        (under[1] + above[1]) / 2 + 1]) + " " + xy(above);
-    } else if (!(pose && pose.ready) && amount < 0.85) {
-      for (var strand = 0; strand < 2; strand++) {
-        var t = 0.27 + strand * 0.46;
-        var v = start[1] + (end[1] - start[1]) * t;
-        var u = front - Math.min(9, length * 0.43);
-        var under = world(u, v), above = bend([u, v]);
-        fibres += " M " + xy(under) + " Q " + xy([(under[0] + above[0]) / 2 - vx * 2,
-          (under[1] + above[1]) / 2 - vy * 2]) + " " + xy(above);
-      }
-    }
-  }
-  for (var mark = 0; mark < axis.pith.length; mark++) {
-    var sample = axis.pith[mark];
-    var d = front - sample[0];
-    if (d <= 1 || d >= length - 2) continue;
-    var p = bend(sample), q = bend([sample[0] + 2.5, sample[1] + 1]);
-    marks += " M " + xy(p) + " L " + xy(q);
-  }
-  function attachedLines(lines) {
-    var result = "", connected = false;
-    for (var i = 0; i < lines.length; i++) {
-      var stroke = lines[i], a = stroke.start, b = stroke.end;
-      var hasStart = a[0] >= front, hasEnd = b[0] >= front;
-      if (!hasStart && !hasEnd) { connected = false; continue; }
-      var cut;
-      if (hasStart !== hasEnd) {
-        var t = (front - a[0]) / (b[0] - a[0]);
-        cut = linePoint(world(front, a[1] + (b[1] - a[1]) * t));
-      }
-      if (!hasStart) result += " M " + cut;
-      else if (!connected || !stroke.continuous) result += stroke.move;
-      result += hasEnd ? stroke.draw : " L " + cut;
-      connected = hasEnd;
-    }
-    return result;
-  }
+  // Each strip is affine before the soft screen bounds. Its projected width changes
+  // sign exactly when it turns its inner face toward the viewer.
+  var along = tx * axis.ux + ty * axis.uy;
+  var cap = depth * 0.4, crease = depth * 0.75;
+  var strips = [clip(lifted, -1, 0, -crease), clip(clip(lifted, 1, 0, crease), -1, 0, -cap),
+    clip(lifted, 1, 0, cap)];
+  var bands = strips.map(function(points, i) {
+    var outline = points.map(bend);
+    return { path: path(outline), pith: i === 0 ? 0.32 * along > depth : i === 1 && (0.92 / 0.35) * along > depth,
+      pores: "", lights: "", marks: "" };
+  });
   var pores = "", lights = "";
-  for (var i = 0; i < axis.rind.length; i++) {
-    var mark = axis.rind[i];
-    if (mark.bent[0] > front + 3) {
-      if (mark.dark) pores += mark.attached;
-      else lights += mark.attached;
-    }
+  for (var dot of surface.texture.marks) {
+    var p = peelLocal(axis, dot);
+    if (clearance(p) > 0 && (surface === piece || inside(piece.points, dot[0], dot[1]))) continue;
+    if (dot[2] < 2) pores += stipple(dot[0], dot[1], dot[2]);
+    else lights += stipple(dot[0], dot[1], dot[2]);
   }
-  var cx = piece.cx, cy = piece.cy;
-  if (flap.length) {
-    cx = flap.reduce(function(sum, p) { return sum + p[0]; }, 0) / flap.length;
-    cy = flap.reduce(function(sum, p) { return sum + p[1]; }, 0) / flap.length;
+  for (var dot of piece.texture.marks) {
+    var p = peelLocal(axis, dot);
+    if (clearance(p) < 1) continue;
+    var band = bands[p[0] < cap ? 2 : p[0] < crease ? 1 : 0], at = bend(p);
+    if (band.pith) continue;
+    if (dot[2] < 2) band.pores += stipple(at[0], at[1], dot[2]);
+    else band.lights += stipple(at[0], at[1], dot[2]);
   }
-  var pinch = "", lip = "";
-  var pinchLift = Math.min(12, gripTravel * 0.8) * clamp((7 - gripDepth) / 10, 0, 1);
-  if (pinchLift >= 1 && amount < 0.95) {
-    // A little buckle lifts at the press point before the moving tear reaches it.
-    var grab = world(axis.grab[0], axis.grab[1]);
-    var half = 2.6 + pinchLift * 0.22;
-    var left = [grab[0] - pose.y * half, grab[1] + pose.x * half];
-    var right = [grab[0] + pose.y * half, grab[1] - pose.x * half];
-    var tip = [grab[0] + pose.x * pinchLift, grab[1] + pose.y * pinchLift];
-    var high = [tip[0] - pose.y * half * 0.48, tip[1] + pose.x * half * 0.48];
-    var low = [tip[0] + pose.y * half * 0.48, tip[1] - pose.x * half * 0.48];
-    lip = "M " + xy(high) + " Q " + xy([tip[0] + pose.x * 2, tip[1] + pose.y * 2]) + " " + xy(low);
-    pinch = lip + " Q " + xy([right[0] + pose.x * 2, right[1] + pose.y * 2]) + " " + xy(right)
-      + " Q " + xy(grab) + " " + xy(left) + " Q " + xy([left[0] + pose.x * 2,
-        left[1] + pose.y * 2]) + " " + xy(high) + " Z";
+  for (var sample of piece.pith) {
+    var p = peelLocal(axis, sample);
+    var band = bands[p[0] < cap ? 2 : p[0] < crease ? 1 : 0];
+    if (band.pith && clearance(p) > 2)
+      band.marks += " M " + linePoint(bend(p)) + " l 2 1";
   }
-  attached = unfold(attached);
-  lifted = unfold(lifted);
-  return { attached: attached.length >= 3 ? path(attached, 2.5) : "",
-    exposed: lifted.length >= 3 ? path(lifted, 2.5) : "",
-    underside: flap.length >= 3 ? path(flap, 2.5) : "",
-    rim: rim, fibres: fibres, marks: marks, pores: pores, lights: lights,
-    rindRim: amount < 1 ? attachedLines(axis.rim) : "",
-    rindShine: amount < 1 ? attachedLines(axis.shine) : "", cx: cx, cy: cy,
-    attachedPoints: attached, flapPoints: flap, pinch: pinch, lip: lip, taut: taut,
-    lift: clamp(amount * 1.4, 0, 1) };
+  function attachedDetails(lines) {
+    if (!attached) return "";
+    return linePath(lines.filter(function(line) {
+      var mid = [(line[0][0] + line[1][0]) / 2, (line[0][1] + line[1][1]) / 2];
+      return clearance(peelLocal(axis, mid)) < 0 || (surface !== piece && !inside(piece.points, mid[0], mid[1]));
+    }));
+  }
+  var taut = !!(pose && pose.ready && amount < 1);
+  var fibres = "";
+  if (amount > 0 && amount < 1 && lifted.length) {
+    var strand = lifted.reduce(function(best, p) {
+      return Math.abs(p[0] - depth * 0.74) < Math.abs(best[0] - depth * 0.74) ? p : best;
+    }, hinge);
+    fibres = "M " + linePoint(world(strand)) + " L " + linePoint(bend(strand));
+  }
+  var tip = bend([0, 0]);
+  var outline = [].concat.apply([], strips.map(function(strip) { return strip.map(bend); }));
+  var cx = 0, cy = 0;
+  for (var pt of outline) { cx += pt[0]; cy += pt[1]; }
+  var crown = clearance(peelLocal(axis, [100, 56]));
+  return { attached: attached, exposed: exposed, exposedPoints: exposedPoints, bands: bands, tip: tip,
+    fibres: fibres, taut: taut, pores: pores, lights: lights, rindRim: attachedDetails(surface.details.rim),
+    rindShine: attachedDetails(surface.details.shine), crownLift: clamp(crown / 7, 0, 1),
+    cx: outline.length ? cx / outline.length : piece.cx, cy: outline.length ? cy / outline.length : piece.cy,
+    lift: clamp(travel / 32, 0, 1) };
 }

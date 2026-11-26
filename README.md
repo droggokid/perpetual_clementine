@@ -1,8 +1,8 @@
 # Perpetual Clementine
 
-Peel and eat a little pixel-art clementine from your Omarchy bar. The peel
-pattern changes depending on where you start, and the plugin keeps a running
-total of the clementines you finish.
+Peel and eat a little pixel-art clementine from your Omarchy bar. Where you
+start determines the peel pattern, and the seams vary a little with each
+fruit. The plugin keeps a running total of the clementines you finish.
 
 ![Perpetual Clementine preview showing the bar widget and its popup](preview.png)
 
@@ -18,7 +18,7 @@ total of the clementines you finish.
 
 ## Install
 
-Requires the Quickshell-based Omarchy shell that ships with Elsewhen.
+Requires Omarchy's Quickshell-based shell. Tested with Omarchy 4.5.0.
 
 ```sh
 omarchy plugin add https://github.com/droggokid/perpetual_clementine.git --yes --enable

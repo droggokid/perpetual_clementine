@@ -11,52 +11,52 @@ Item {
   width: 200
   height: 200
 
-  Shape {
+  Item {
     x: 1 - root.groundContact * 0.6
     y: root.frame ? (1.5 + root.frame.lift * 2.5) * (1 - root.groundContact) + 0.7 * root.groundContact : 0
     opacity: root.frame ? 0.16 - root.frame.lift * 0.055 + 0.07 * root.groundContact : 0
-    ShapePath {
-      fillColor: "#68452d"; strokeColor: "transparent"
-      PathSvg { path: root.frame ? root.frame.underside : "" }
-    }
-    ShapePath {
-      fillColor: "#68452d"; strokeColor: "transparent"
-      PathSvg { path: root.frame ? root.frame.pinch : "" }
+    Repeater {
+      model: 3
+      delegate: Shape {
+        required property int index
+        ShapePath {
+          fillColor: "#68452d"; strokeColor: "transparent"
+          PathSvg { path: root.frame ? root.frame.bands[index].path : "" }
+        }
+      }
     }
   }
-  Shape {
-    ShapePath {
-      fillGradient: LinearGradient {
-        x1: root.frame ? root.frame.cx - 24 : 0; y1: root.frame ? root.frame.cy - 20 : 0
-        x2: x1 + 48; y2: y1 + 40
-        GradientStop { position: 0; color: "#fff1d4" }
-        GradientStop { position: 0.54; color: "#f9e5bd" }
-        GradientStop { position: 1; color: "#e6be88" }
+  // Paint from the attached crease toward the raised tip so the near face wins at a fold.
+  Repeater {
+    model: 3
+    delegate: Shape {
+      id: strip
+      required property int index
+      readonly property var band: root.frame ? root.frame.bands[index] : null
+      readonly property bool pale: band ? band.pith : false
+      ShapePath {
+        fillGradient: LinearGradient {
+          x1: root.frame ? root.frame.cx - 24 : 0; y1: root.frame ? root.frame.cy - 20 : 0
+          x2: x1 + 48; y2: y1 + 40
+          GradientStop { position: 0; color: strip.pale ? "#fff1d4" : Qt.lighter(root.rindColor, 1.13) }
+          GradientStop { position: 1; color: strip.pale ? "#e6be88" : Qt.darker(root.rindColor, 1.12) }
+        }
+        strokeColor: strip.pale ? "#e6be88" : Qt.darker(root.rindColor, 1.08); strokeWidth: 0.65
+        joinStyle: ShapePath.RoundJoin
+        PathSvg { path: strip.band ? strip.band.path : "" }
       }
-      strokeColor: Qt.darker(root.rindColor, 1.08); strokeWidth: 1.8
-      joinStyle: ShapePath.RoundJoin
-      PathSvg { path: root.frame ? root.frame.underside : "" }
-    }
-    ShapePath {
-      fillColor: "transparent"; strokeColor: "#d6ae7c"; strokeWidth: 1.3
-      capStyle: ShapePath.RoundCap
-      PathSvg { path: root.frame ? root.frame.marks : "" }
-    }
-    ShapePath {
-      fillColor: "transparent"; strokeColor: "#fff0ce"; strokeWidth: 2
-      capStyle: ShapePath.RoundCap
-      PathSvg { path: root.frame ? root.frame.rim : "" }
-    }
-    ShapePath {
-      fillColor: Qt.lighter(root.rindColor, 1.08)
-      strokeColor: Qt.darker(root.rindColor, 1.1); strokeWidth: 0.7
-      joinStyle: ShapePath.RoundJoin
-      PathSvg { path: root.frame ? root.frame.pinch : "" }
-    }
-    ShapePath {
-      fillColor: "transparent"; strokeColor: "#ffe2ad"; strokeWidth: 1.5
-      capStyle: ShapePath.RoundCap
-      PathSvg { path: root.frame ? root.frame.lip : "" }
+      ShapePath {
+        fillColor: "#d88739"; strokeColor: "transparent"
+        PathSvg { path: strip.band ? strip.band.pores : "" }
+      }
+      ShapePath {
+        fillColor: "#ffd28b"; strokeColor: "transparent"
+        PathSvg { path: strip.band ? strip.band.lights : "" }
+      }
+      ShapePath {
+        fillColor: "transparent"; strokeColor: "#d6ae7c"; strokeWidth: 1
+        PathSvg { path: strip.band ? strip.band.marks : "" }
+      }
     }
   }
   Shape {
