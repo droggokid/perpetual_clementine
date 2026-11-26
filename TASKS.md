@@ -1,6 +1,6 @@
 # Tasks
 
-## Give each clementine a different peel
+## Give each clementine a different peel (done)
 
 As a player, I want the rind to tear a little differently on each fruit so
 peeling stays surprising even when I start in the same place.
@@ -18,10 +18,9 @@ peeling stays surprising even when I start in the same place.
 
 ### Implementation notes
 
-Use the seed when building the peel polygons and keep the existing hit testing,
-curl, and drop animation. Replay a fixed set of seeds in CI to check rind
-coverage and piece reachability. Include the seed, fruit variant, and grab
-coordinates in failures so the layout can be reproduced locally.
+The seed shifts shared seam points when the peel polygons are built. The
+model tests replay a fixed set of seeds to check rind coverage and piece
+reachability. Failures include the seed, fruit variant, and grab coordinates.
 [FruitModel.js](FruitModel.js) · [Clementine.qml](Clementine.qml)
 
 A follow-up could let the tear follow the drag in real time. That would need

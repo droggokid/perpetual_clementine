@@ -33,6 +33,9 @@ Rectangle {
       completion.clear();
       landing.clear();
     }
+    function setVariation(overrides) {
+      fruit.variation = Object.assign({}, fruit.variation, overrides);
+    }
     function pixel(x, y) {
       return Qt.point(fruit.centerX + (x - 100) * fruit.artScale * fruit.fruitStyle.width,
         fruit.centerY + (y - 100) * fruit.artScale * fruit.fruitStyle.height);
@@ -82,37 +85,34 @@ Rectangle {
       compare(fruit.remaining, 8);
     }
     function test_fruit_appearance_parts_can_mix() {
-      for (var shape = 0; shape < Model.fruits.length; shape++) {
-        fruit.variant = shape;
-        for (var rind = 0; rind < Model.fruits.length; rind++) {
-          fruit.rindVariant = rind;
-          for (var leaf = 0; leaf < Model.fruits.length; leaf++) {
-            fruit.leafVariant = leaf;
-            compare(fruit.fruitStyle.width, Model.fruits[shape].width);
-            compare(fruit.fruitStyle.height, Model.fruits[shape].height);
-            verify(Qt.colorEqual(fruit.rindColor, Model.fruits[rind].skin));
-            compare(fruit.leafStyle.leafX, Model.fruits[leaf].leafX);
+      for (var shape = 0; shape < Model.fruitShapes.length; shape++) {
+        for (var rind = 0; rind < Model.rindColors.length; rind++) {
+          for (var stem = 0; stem < Model.stemStyles.length; stem++) {
+            setVariation({ shape: shape, rind: rind, stem: stem });
+            compare(fruit.fruitStyle, Model.fruitShapes[shape]);
+            verify(Qt.colorEqual(fruit.rindColor, Model.rindColors[rind]));
+            compare(fruit.stemStyle, Model.stemStyles[stem]);
           }
         }
       }
     }
-    function test_rind_colour_repeats_at_most_twice() {
-      for (var rind = 0; rind < Model.fruits.length; rind++) {
-        fruit.rindVariant = rind;
-        fruit.rindStreak = 2;
-        fruit.reset();
-        verify(fruit.rindVariant !== rind);
-        compare(fruit.rindStreak, 1);
-      }
-
-      var previous = fruit.rindVariant;
-      var streak = 1;
-      for (var i = 0; i < 24; i++) {
-        fruit.reset();
-        streak = fruit.rindVariant === previous ? streak + 1 : 1;
-        compare(fruit.rindStreak, streak);
-        verify(streak <= 2);
-        previous = fruit.rindVariant;
+    function test_reset_renews_fruit_variation() {
+      setVariation({ remainingRinds: [] });
+      var lastRinds = [];
+      for (var cycle = 0; cycle < 6; cycle++) {
+        var rinds = [];
+        for (var draw = 0; draw < Model.rindColors.length; draw++) {
+          var previous = fruit.variation;
+          fruit.reset();
+          var next = fruit.variation;
+          verify(next.shape !== previous.shape);
+          verify(next.stem !== previous.stem);
+          verify(rinds.indexOf(next.rind) === -1);
+          verify(lastRinds[0] !== next.rind || lastRinds[1] !== next.rind);
+          lastRinds = [next.rind, lastRinds[0]];
+          rinds.push(next.rind);
+        }
+        compare(fruit.variation.remainingRinds.length, 0);
       }
     }
     function test_click_eats_one() {
@@ -123,7 +123,7 @@ Rectangle {
       compare(fruit.remaining, 7);
     }
     function test_stationary_seam_click_with_transformed_art_eats_one() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       expose();
       fruit.arrival = 0.25;
       for (var x = 45; x < 156; x += 0.5) {
@@ -370,7 +370,7 @@ Rectangle {
       mouseRelease(fruit, end.x, end.y, Qt.LeftButton);
     }
     function test_initial_drag_sets_direction_and_reverses() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       var p = pixel(36, 108);
       mousePress(fruit, p.x, p.y, Qt.LeftButton);
       var inward = pullTarget(36, 108, -36), outward = pullTarget(36, 108, 28);
@@ -393,7 +393,7 @@ Rectangle {
       compare(fruit.peelRemaining, fruit.pieces.length - 1);
     }
     function test_drag_can_turn_past_its_starting_direction() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       var grab = pixel(36, 108);
       mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
       var points = [pixel(14, 108), pixel(36, 164), pixel(92, 108)];
@@ -411,7 +411,7 @@ Rectangle {
       compare(fruit.peelRemaining, fruit.pieces.length - 1);
     }
     function test_grip_lifts_at_cursor_and_ready_peel_waits_for_release() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       var grab = pixel(100, 108);
       var lift = pixel(110, 108);
       mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
@@ -440,7 +440,7 @@ Rectangle {
 
     function test_can_grab_during_drop() {
       fruit.animationDuration = 220;
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       pullFrom(100, 62, 80);
       tryVerify(function() { return fruit.dropping >= 0 && fruit.dropProgress > 0.05; });
       var prior = fruit.dropProgress;
@@ -469,6 +469,18 @@ Rectangle {
         verify(Math.abs(fruit.startPoint.y - starts[i][1]) < 1);
         compare(fruit.peelRemaining, fruit.pieces.length - 1);
       }
+    }
+    function test_seed_changes_peel_for_the_same_grab() {
+      setVariation({ shape: 0, tearSeed: 0 });
+      verify(fruit.beginPeel(0, 100, 62));
+      var layout = JSON.stringify(fruit.pieces);
+      var pattern = fruit.pattern;
+
+      fruit.reset();
+      setVariation({ shape: 0, tearSeed: 0.5 });
+      verify(fruit.beginPeel(0, 100, 62));
+      compare(fruit.pattern, pattern);
+      verify(JSON.stringify(fruit.pieces) !== layout);
     }
     function test_cancelled_start_can_choose_another_pattern() {
       pullFrom(100, 62, 5);
@@ -527,7 +539,7 @@ Rectangle {
     }
 
     function test_first_bite_keeps_distant_wedge_shading() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       expose();
       mouseMove(fruit, 5, 5);
       waitForRendering(fruit);
@@ -546,7 +558,7 @@ Rectangle {
     }
 
     function test_joined_flesh_covers_gap_and_accepts_click() {
-      fruit.variant = 2;
+      setVariation({ shape: 2 });
       expose();
       var p = pixel(101, 145);
       verify(fruit.hitAt(p.x, p.y) >= 0);
@@ -560,7 +572,7 @@ Rectangle {
     }
 
     function test_isolated_wedges_keep_solid_clickable_flesh() {
-      fruit.variant = 0;
+      setVariation({ shape: 0 });
       expose();
       for (var i = 0; i < Model.segments; i++) {
         fruit.eaten = Model.all ^ (1 << i);
@@ -587,7 +599,7 @@ Rectangle {
     function test_pixel_art_keeps_visual_hit_alignment(row) {
       testSurface.color = row.background;
       fruit.anchors.margins = row.margin;
-      fruit.variant = row.variant;
+      setVariation({ shape: row.variant });
       verify(waitForRendering(testSurface));
       var image = grabImage(testSurface);
       verify(Qt.colorEqual(image.pixel(5, 5), row.background));
@@ -604,7 +616,7 @@ Rectangle {
 
     function test_compact_popup_preserves_pointer_targets() {
       fruit.anchors.margins = 130;
-      fruit.variant = 2;
+      setVariation({ shape: 2 });
       verify(fruit.artScale < 0.6);
       expose();
       var target = pixel(115, 110);

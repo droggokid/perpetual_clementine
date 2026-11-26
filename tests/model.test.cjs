@@ -73,7 +73,7 @@ function checkSplashOrigins(variant, index) {
 
 const patternSizes = [3, 4, 5, 4, 4];
 for (let pattern = 0; pattern < patternSizes.length; pattern++) {
-  for (let variant = 0; variant < model.fruits.length; variant++) {
+  for (let variant = 0; variant < model.fruitShapes.length; variant++) {
     const body = model.bodyPoints(variant);
     const pieces = model.peelPieces(pattern, variant);
     assert.equal(pieces.length, patternSizes[pattern]);
@@ -90,7 +90,7 @@ for (let pattern = 0; pattern < patternSizes.length; pattern++) {
     assert.equal(model.hitPeel(pieces, (1 << pieces.length) - 1, 100, 108), -1);
   }
 }
-for (let variant = 0; variant < model.fruits.length; variant++) {
+for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   for (let column = 0; column < 4; column++) {
     const x = [42, 82, 115, 156][column];
     assert.equal(model.hitSegment(x, 110, 0, variant), column + 4);
@@ -114,6 +114,29 @@ for (let variant = 0; variant < model.fruits.length; variant++) {
 const selected = model.sweep(35, 118, 165, 118, 0, 0);
 assert(model.count(selected) >= 2, 'a quick sweep must include intervening pieces');
 assert.equal(model.sweep(35, 118, 165, 118, model.all, 0), 0);
+const originalRandom = modelMath.random;
+try {
+  // Cover both a single row and the front and back rows together.
+  for (const mask of [selected, model.all]) {
+    const origins = model.lobes[0].filter((_, i) => mask & (1 << i)).map(piece =>
+      (piece.bounds[0] + piece.bounds[2]) / 2 + piece.dx).sort((a, b) => a - b);
+    for (const count of [2, 3]) {
+      let first = true;
+      modelMath.random = () => {
+        if (!first) return 0.5; // Keep subsequent draws centred on their slices.
+        first = false;
+        return count === 2 ? 0 : 0.5;
+      };
+      const drops = model.juiceDrops(mask, 0);
+      assert.equal(drops.length, count);
+      assert.equal(drops[0].x, origins[0]);
+      assert.equal(drops.at(-1).x, origins.at(-1));
+      if (count === 3) assert(drops[1].x > drops[0].x && drops[1].x < drops[2].x);
+    }
+  }
+} finally {
+  modelMath.random = originalRandom;
+}
 const hitSegment = model.hitSegment;
 const horizontal = model.sweep(199, 118, 1, 118, 0, 0);
 const vertical = model.sweep(100, 1, 100, 199, 0, 0);
@@ -148,7 +171,7 @@ const sweepPaths = [
   [[129.4, 109.6], [129.4, 109.6]],
   [[62.7, 87.2], [63.1, 87.3]],
 ];
-for (let variant = 0; variant < model.fruits.length; variant++) {
+for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   for (const eaten of [0, 0b10100000, 0b11110000, 0b11011111, model.all]) {
     const alreadySelected = (1 << 4) & ~eaten;
     for (const [start, end] of sweepPaths) {
@@ -199,28 +222,55 @@ console.log('Progressive tear, curled surfaces, pith release, and complete detac
 
 const starts = [[100, 62, 1], [36, 108, 0], [164, 108, 0], [100, 153, 3], [100, 108, 2],
   [74, 147, 3], [46, 134, 4], [154, 134, 4]];
+const tearSeeds = [0, 0.25, 0.5, 0.75];
 for (const [x, y, expected] of starts) {
   assert.equal(model.patternAtStart(x, y), expected);
-  for (let variant = 0; variant < model.fruits.length; variant++) {
+  for (let variant = 0; variant < model.fruitShapes.length; variant++) {
     const body = model.bodyPoints(variant);
-    const pieces = model.peelPieces(expected, variant, x, y);
-    model.peelPieces((expected + 1) % patternSizes.length, (variant + 1) % model.fruits.length);
-    assert.deepEqual(model.peelPieces(expected, variant, x, y), pieces,
-      `replaying variant ${variant}, pattern ${expected}, grab (${x}, ${y}) must reproduce the layout`);
-    assert.equal(pieces.length, patternSizes[expected]);
-    assert(model.hitPeel(pieces, 0, x, y) >= 0, 'the first grab must land in its selected pattern');
-    for (let px = 25.13; px < 178; px += 5.37) {
-      for (let py = 46.31; py < 171; py += 5.23) {
-        if (!model.inside(body, px, py)) continue;
-        assert(model.hitPeel(pieces, 0, px, py) >= 0, 'anchored patterns must still cover the whole rind');
+    const layouts = new Set();
+    for (const seed of tearSeeds) {
+      const label = `seed ${seed}, variant ${variant}, pattern ${expected}, grab (${x}, ${y})`;
+      const pieces = model.peelPieces(expected, variant, x, y, seed);
+      layouts.add(pieces.map(piece => piece.path).join(''));
+      assert.deepEqual(model.peelPieces(expected, variant, x, y, seed), pieces, label);
+      assert.equal(pieces.length, patternSizes[expected], label);
+      assert(model.hitPeel(pieces, 0, x, y) >= 0, `${label}: initial grab missed`);
+      let reachable = 0;
+      for (let px = 25.13; px < 178; px += 5.37) {
+        for (let py = 46.31; py < 171; py += 5.23) {
+          if (!model.inside(body, px, py)) continue;
+          const index = model.hitPeel(pieces, 0, px, py);
+          assert(index >= 0, `${label}: bare rind at (${px.toFixed(2)}, ${py.toFixed(2)})`);
+          reachable |= 1 << index;
+        }
+      }
+      assert.equal(reachable, (1 << pieces.length) - 1, `${label}: unreachable peel piece`);
+      for (const piece of pieces) {
+        assert(model.inside(piece.points, piece.cx, piece.cy), `${label}: keyboard grab missed`);
       }
     }
+    assert.equal(layouts.size, tearSeeds.length, 'different seeds should give different tears');
   }
 }
-for (let previous = 0; previous < model.fruits.length; previous++) {
+let fruit = null;
+const rindOrder = [0, 0, 0, 0, 0.99, 0, 0, 0].map(random => {
+  const next = model.nextFruitVariation(fruit, () => random);
+  if (fruit) {
+    assert.notEqual(next.shape, fruit.shape);
+    assert.notEqual(next.stem, fruit.stem);
+  }
+  fruit = next;
+  return next.rind;
+});
+assert.deepEqual(rindOrder, [0, 1, 2, 3, 3, 0, 1, 2], 'each colour appears once per shuffle');
+const lastChoices = model.nextFruitVariation(null, () => 0.99);
+assert.equal(lastChoices.shape, model.fruitShapes.length - 1);
+assert.equal(lastChoices.stem, model.stemStyles.length - 1);
+assert.equal(lastChoices.rind, model.rindColors.length - 1);
+for (let previous = 0; previous < model.fruitShapes.length; previous++) {
   for (const random of [0, 0.1, 0.5, 0.99, 1]) {
-    const next = model.nextVariant(previous, random);
-    assert(next !== previous && next >= 0 && next < model.fruits.length);
+    const next = model.nextVariant(previous, model.fruitShapes.length, random);
+    assert(next !== previous && next >= 0 && next < model.fruitShapes.length);
   }
 }
 for (const [a, b] of [[[36, 105], [36, 112]], [[96, 62], [104, 62]], [[94, 147], [106, 147]], [[45, 128], [50, 137]]]) {
@@ -234,7 +284,7 @@ console.log('Start-selected families, anchored rind coverage, and variation chec
 
 const grabXs = [28.4, 43.9, 57.2, 67.8, 68.2, 89.7, 112.9, 131.8, 132.2, 151.2, 172.8];
 const grabYs = [58.7, 82.8, 83.2, 98.4, 115.8, 116.2, 136.8, 137.2, 154.7, 162.9];
-for (let variant = 0; variant < model.fruits.length; variant++) {
+for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   const body = model.bodyPoints(variant);
   const probes = [];
   for (let x = 25.41; x < 178; x += 7.37) {
@@ -262,7 +312,7 @@ for (let variant = 0; variant < model.fruits.length; variant++) {
 }
 console.log('Starting near pattern boundaries preserves rind coverage and reachable peel pieces.');
 
-for (let variant = 0; variant < model.fruits.length; variant++) {
+for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   for (const [x, y, pattern] of starts.concat([[140, 134, 2]])) {
     const pieces = model.peelPieces(pattern, variant, x, y);
     for (const piece of pieces) {
@@ -330,7 +380,7 @@ function crossesItself(points) {
   }
   return false;
 }
-for (let variant = 0; variant < model.fruits.length; variant++) {
+for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   for (const [x, y, pattern] of starts) {
     const pieces = model.peelPieces(pattern, variant, x, y);
     const piece = pieces[model.hitPeel(pieces, 0, x, y)];

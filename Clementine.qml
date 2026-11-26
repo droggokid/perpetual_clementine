@@ -21,10 +21,8 @@ Item {
   property string accessibleName: ""
   property string accessibleDescription: ""
   property int pattern: -1
-  property int variant: Model.nextVariant(-1, Math.random())
-  property int rindVariant: Model.nextVariant(-1, Math.random())
-  property int rindStreak: 1
-  property int leafVariant: Model.nextVariant(-1, Math.random())
+  property var variation: Model.nextFruitVariation(null, Math.random)
+  readonly property int variant: variation.shape
   property point startPoint: Qt.point(100, 62)
   property int peeledMask: 0
   property int activePeel: -1
@@ -44,14 +42,15 @@ Item {
   property bool usingKeyboard: false
   readonly property var keyboardStarts: [[100, 62], [36, 108], [46, 134],
     [100, 153], [154, 134], [164, 108], [100, 108]]
-  readonly property var fruitStyle: Model.fruits[variant]
-  readonly property color rindColor: Model.fruits[rindVariant].skin
-  readonly property var leafStyle: Model.fruits[leafVariant]
+  readonly property var fruitStyle: Model.fruitShapes[variant]
+  readonly property color rindColor: Model.rindColors[variation.rind]
+  readonly property var stemStyle: Model.stemStyles[variation.stem]
   property string gesture: ""
   property point origin: Qt.point(0, 0)
   property point previous: Qt.point(0, 0)
   readonly property bool patternChosen: pattern >= 0
-  readonly property var pieces: patternChosen ? Model.peelPieces(pattern, variant, startPoint.x, startPoint.y) : []
+  readonly property var pieces: patternChosen
+    ? Model.peelPieces(pattern, variation.shape, startPoint.x, startPoint.y, variation.tearSeed) : []
   readonly property bool fullyPeeled: patternChosen && peeledMask === (1 << pieces.length) - 1
   readonly property string hintKey: {
     if (gesture === "peel" && pullPose.ready) return "releaseHint";
@@ -277,11 +276,7 @@ Item {
     keyboardIndex = -1;
     pattern = -1;
     startPoint = Qt.point(100, 62);
-    variant = Model.nextVariant(variant, Math.random());
-    var nextRind = Model.nextVariant(rindStreak >= 2 ? rindVariant : -1, Math.random());
-    rindStreak = nextRind === rindVariant ? rindStreak + 1 : 1;
-    rindVariant = nextRind;
-    leafVariant = Model.nextVariant(-1, Math.random());
+    variation = Model.nextFruitVariation(variation, Math.random);
     arrival = 1;
     if (interactive && animationDuration > 0) { arrival = 0; arriveAnimation.restart(); }
   }
@@ -580,8 +575,8 @@ Item {
           x: 100; y: 49
           visible: root.crownPiece < 0 ? root.peeledMask === 0 : !(root.peeledMask & (1 << root.crownPiece))
           opacity: root.activePeel >= 0 && root.activePeel === root.crownPiece ? 1 - root.peelProgress : 1
-          transform: Scale { xScale: root.leafStyle.leafX; yScale: root.leafStyle.leafY }
-          rotation: root.leafStyle.tilt + (root.activePeel >= 0 && root.activePeel === root.crownPiece
+          transform: Scale { xScale: root.stemStyle.leafX; yScale: root.stemStyle.leafY }
+          rotation: root.stemStyle.tilt + (root.activePeel >= 0 && root.activePeel === root.crownPiece
             ? -root.peelProgress * 24 : 0)
           Behavior on rotation { NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic } }
           ShapePath {
@@ -589,12 +584,11 @@ Item {
             PathSvg { path: "M -12 2 Q -9 -1 -4 -1 Q -7 -5 -5 -6 L -1 -3 Q -2 -9 1 -11 Q 4 -11 4 -8 L 3 -3 Q 10 -5 12 -2 L 6 0 Q 9 2 9 4 Q 3 3 0 2 Q -6 5 -12 2 Z" }
           }
           ShapePath {
-            fillColor: root.leafVariant === 0 ? "#6f9451" : "transparent"
-            strokeColor: "transparent"
-            PathSvg { path: "M 2 0 C -5 -1 -14 -8 -17 -18 C -7 -20 0 -10 2 0 Z" }
+            fillColor: "#6f9451"; strokeColor: "transparent"
+            PathSvg { path: root.stemStyle.secondLeaf ? "M 2 0 C -5 -1 -14 -8 -17 -18 C -7 -20 0 -10 2 0 Z" : "" }
           }
           ShapePath {
-            fillColor: root.leafStyle.leafColor; strokeColor: "#688742"; strokeWidth: 1.8
+            fillColor: root.stemStyle.leafColor; strokeColor: "#688742"; strokeWidth: 1.8
             PathSvg { path: "M 0 0 C 2 -8 8 -18 21 -21 Q 31 -23 34 -18 C 31 -8 18 2 7 2 Q 2 2 0 0 Z" }
           }
           ShapePath {
@@ -662,9 +656,15 @@ Item {
     onExited: root.hovered = -1
     onCanceled: root.cancelGesture()
     onPressed: function(mouse) {
-      if (root.inputBlocked || root.gesture !== "") return;
+      if (root.inputBlocked || root.gesture !== "") {
+        mouse.accepted = false;
+        return;
+      }
       var id = root.hitAt(mouse.x, mouse.y);
-      if (id < 0) return;
+      if (id < 0) {
+        mouse.accepted = false;
+        return;
+      }
       root.usingKeyboard = false;
       root.keyboardIndex = -1;
       root.origin = Qt.point(mouse.x, mouse.y);
@@ -673,6 +673,7 @@ Item {
       else {
         var p = art.mapFromItem(root, mouse.x, mouse.y);
         if (root.beginPeel(id, p.x, p.y)) root.gesture = "peel";
+        else mouse.accepted = false;
       }
     }
     onPositionChanged: function(mouse) {
