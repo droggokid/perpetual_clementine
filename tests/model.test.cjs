@@ -71,7 +71,7 @@ function checkSplashOrigins(variant, index) {
   }
 }
 
-const patternSizes = [3, 4, 5, 4, 4];
+const patternSizes = [3, 4, 5, 4, 4, 1];
 for (let pattern = 0; pattern < patternSizes.length; pattern++) {
   for (let variant = 0; variant < model.fruitShapes.length; variant++) {
     const body = model.bodyPoints(variant);
@@ -193,32 +193,27 @@ function area(points) {
 }
 for (let pattern = 0; pattern < patternSizes.length; pattern++) {
   for (const piece of model.peelPieces(pattern, 1)) {
-    for (const grab of [[piece.cx, piece.cy - 100], [piece.cx + 100, piece.cy]]) {
-      const axis = model.peelAxis(piece, ...grab);
-      let previousArea = area(piece.points) + 0.001;
-      for (const progress of [0, 0.1, 0.35, 0.65, 0.85, 1]) {
-        const frame = model.peelFrame(piece, progress, axis);
-        const attachedArea = area(frame.attachedPoints);
-        assert(attachedArea <= previousArea + 0.001, 'the attached skin must recede as peeling advances');
-        previousArea = attachedArea;
-        assert(Number.isFinite(frame.cx) && Number.isFinite(frame.cy));
-        assert(frame.flapPoints.every(p => p.every(Number.isFinite)));
-        for (const name of ['attached', 'underside', 'rim', 'fibres', 'marks', 'pores', 'lights', 'rindRim', 'rindShine']) {
-          assert(!/NaN|Infinity|undefined/.test(frame[name]));
-        }
-        if (progress === 0) assert.equal(frame.underside, '');
-        if (progress === 1) {
-          assert.equal(frame.attached, '');
-          assert(frame.underside.length > 0);
-          assert.equal(frame.fibres, '');
-          assert.equal(frame.rindRim, '');
-          assert.equal(frame.rindShine, '');
-        }
+    const axis = model.peelAxis(piece, piece.cx, piece.cy);
+    const pose = model.pullPose(axis, 46, axis.pullX, axis.pullY);
+    let lastArea = 0;
+    for (const progress of [0, 0.1, 0.35, 0.65, 0.85, 1]) {
+      const frame = model.peelFrame(piece, progress, axis, pose);
+      const exposedArea = area(frame.exposedPoints);
+      assert(exposedArea >= lastArea - 0.001, 'the opening must grow continuously');
+      lastArea = exposedArea;
+      assert(Number.isFinite(frame.cx) && Number.isFinite(frame.cy));
+      for (const band of frame.bands)
+        assert(!/NaN|Infinity|undefined/.test(band.path + band.pores + band.lights + band.marks));
+      if (progress === 0) assert.equal(frame.exposed, '');
+      if (progress === 1) {
+        assert.equal(frame.attached + frame.fibres + frame.rindRim + frame.rindShine, '');
+        assert(Math.abs(exposedArea - area(piece.points)) < 0.001);
+        assert(frame.bands.some(band => band.path && !band.pith));
       }
     }
   }
 }
-console.log('Progressive tear, curled surfaces, pith release, and complete detachment checks passed.');
+console.log('Progressive opening, folded surfaces and complete detachment checks passed.');
 
 const starts = [[100, 62, 1], [36, 108, 0], [164, 108, 0], [100, 153, 3], [100, 108, 2],
   [74, 147, 3], [46, 134, 4], [154, 134, 4]];
@@ -313,85 +308,95 @@ for (let variant = 0; variant < model.fruitShapes.length; variant++) {
 console.log('Starting near pattern boundaries preserves rind coverage and reachable peel pieces.');
 
 for (let variant = 0; variant < model.fruitShapes.length; variant++) {
-  for (const [x, y, pattern] of starts.concat([[140, 134, 2]])) {
-    const pieces = model.peelPieces(pattern, variant, x, y);
-    for (const piece of pieces) {
-      const axis = model.peelAxis(piece, piece.cx, piece.cy);
-      assert.equal(model.pullPose(axis, 0, 1, 0).amount, 0);
-      const ready = model.pullPose(axis, 80, 1, 0);
-      assert(ready.ready && ready.amount < 1);
-      const held = model.peelFrame(piece, ready.amount, axis, ready);
-      assert(held.attached.length > 0 && held.taut && held.fibres.length > 0);
-      for (const progress of [0.25, 0.5, 0.75, 0.96, 1]) {
-        const frame = model.peelFrame(piece, progress, axis);
-        assert(frame.flapPoints.every(([px, py]) => px >= -24 && px <= 224 && py >= 15 && py <= 203),
-          'the curl must fit inside the artwork layer with padding for its rim and shadow');
-      }
-    }
-  }
-}
-console.log('Pull travel, shallow curl, and stage bounds checks passed.');
-
-const oppositeGrab = [91, 70];
-const crown = model.peelPieces(1, 3, ...oppositeGrab);
-const grabbed = crown[model.hitPeel(crown, 0, ...oppositeGrab)];
-const leftAxis = model.peelAxis(grabbed, ...oppositeGrab, -1, 0);
-const rightAxis = model.peelAxis(grabbed, ...oppositeGrab, 1, 0);
-assert(Math.hypot(leftAxis.tip[0] - rightAxis.tip[0], leftAxis.tip[1] - rightAxis.tip[1]) < 1);
-const leftCurl = model.peelFrame(grabbed, 0.18, leftAxis);
-const rightCurl = model.peelFrame(grabbed, 0.18, leftAxis, { x: 1, y: 0 });
-assert(leftCurl.cx < rightCurl.cx - 3, 'the loose end should follow the pull even at the same tear edge');
-assert(leftCurl.rindRim.length > 0, 'lifting a corner preserves the intact rind outline');
-
-const centreGrab = [100, 108];
-const patchLayout = model.peelPieces(2, 0, ...centreGrab);
-const patch = patchLayout[model.hitPeel(patchLayout, 0, ...centreGrab)];
-const patchAxis = model.peelAxis(patch, ...centreGrab, 1, 0);
-const smallPull = model.pullPose(patchAxis, 10, 1, 0);
-const liftedLip = model.peelFrame(patch, smallPull.amount, patchAxis, smallPull);
-assert(!smallPull.ready && liftedLip.lip.length > 0 && liftedLip.pinch.length > 0);
-const firstLipX = Number(liftedLip.lip.split(" ")[1]);
-assert(firstLipX > centreGrab[0] && firstLipX < centreGrab[0] + 10, 'the lip should track the grab at first lift');
-const stretched = model.pullPose(patchAxis, 80, 1, 0);
-const released = model.peelFrame(patch, 1, patchAxis, stretched);
-assert(!released.taut && released.fibres === '' && released.attached === '' && released.pinch === '');
-
-const sideGrab = [38, 108];
-const ribbons = model.peelPieces(0, 0, ...sideGrab);
-const ribbon = ribbons[model.hitPeel(ribbons, 0, ...sideGrab)];
-const ribbonAxis = model.peelAxis(ribbon, ...sideGrab, -1, 0);
-const longPull = model.pullPose(ribbonAxis, 78, -1, 0);
-const longCurl = model.peelFrame(ribbon, longPull.amount, ribbonAxis, longPull);
-assert(Math.min(...longCurl.flapPoints.map(p => p[0])) < sideGrab[0] - 8,
-  'a wide ribbon must stay on the pull side when fully stretched');
-
-function crossesItself(points) {
-  function side(a, b, p) {
-    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-  }
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i], b = points[(i + 1) % points.length];
-    for (let j = i + 2; j < points.length; j++) {
-      if (i === 0 && j === points.length - 1) continue;
-      const c = points[j], d = points[(j + 1) % points.length];
-      if (side(a, b, c) * side(a, b, d) < -1e-5 && side(c, d, a) * side(c, d, b) < -1e-5)
-        return true;
-    }
-  }
-  return false;
-}
-for (let variant = 0; variant < model.fruitShapes.length; variant++) {
   for (const [x, y, pattern] of starts) {
-    const pieces = model.peelPieces(pattern, variant, x, y);
+    const pieces = model.peelPieces(pattern, variant, x, y, 0.25);
     const piece = pieces[model.hitPeel(pieces, 0, x, y)];
-    const axis = model.peelAxis(piece, x, y, -1, 0);
-    // Turn in the middle of the pull while keeping the same hinge.
-    for (const [dx, dy] of [[-1, 0], [0, -1], [1, 0], [0, 1]]) {
-      for (const distance of [10, 24, 39, 60, 82]) {
+    const [whole] = model.peelPieces(model.wholeRindPattern, variant, x, y, 0.25);
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const axis = model.peelAxis(piece, x, y, dx, dy);
+      const promoted = model.fitPeel(axis, whole, true);
+      for (const distance of [8, 16, 24]) {
         const pose = model.pullPose(axis, distance, dx, dy);
-        const frame = model.peelFrame(piece, pose.amount, axis, pose);
-        assert(!crossesItself(frame.flapPoints), 'one continuous peel sheet must not cross over itself');
+        const a = model.peelFrame(piece, pose.amount, axis, pose);
+        const wholePose = model.pullPose(promoted, distance, dx, dy);
+        const b = model.peelFrame(whole, wholePose.amount, promoted, wholePose);
+        assert(a.exposedPoints.length >= 3 && area(a.exposedPoints) > 0);
+        assert(a.exposedPoints.every(p => Math.hypot(p[0] - x, p[1] - y) <= distance));
+        assert(Math.abs(area(a.exposedPoints) - area(b.exposedPoints)) < 0.001, 'opening jumps on promotion');
+        assert(Math.hypot(a.tip[0] - b.tip[0], a.tip[1] - b.tip[1]) < 0.001, 'curl jumps on promotion');
       }
+      const [fx, fy] = [axis.pullX, axis.pullY];
+      const pose = model.pullPose(promoted, 76, fx, fy);
+      assert(pose.ready && pose.amount < 1);
+      const held = model.peelFrame(whole, pose.amount, promoted, pose);
+      assert(held.taut && held.fibres && held.attached);
+      assert(area(held.exposedPoints) > 0.95 * area(whole.points));
+      const crease = Math.max(...held.exposedPoints.map(p => model.peelLocal(promoted, p)[0]));
+      const hinge = held.exposedPoints.filter(p => Math.abs(model.peelLocal(promoted, p)[0] - crease) < 0.001);
+      assert(hinge.length >= 2);
+      for (const point of hinge)
+        assert(held.bands[0].path.includes(model.linePoint(point)), 'the lifted sheet must meet the stationary crease');
+      const length = Math.hypot(76, 40);
+      const sideways = model.pullPose(promoted, length, (76 * fx - 40 * fy) / length, (76 * fy + 40 * fx) / length);
+      assert.equal(sideways.amount, pose.amount, 'movement parallel to the crease must not advance the tear');
+      const swung = model.peelFrame(whole, sideways.amount, promoted, sideways);
+      assert(Math.hypot(held.tip[0] - swung.tip[0], held.tip[1] - swung.tip[1]) < 35, 'sideways bending must be bounded');
+      const tangent = model.pullPose(promoted, 72, -fy, fx);
+      assert(tangent.amount > 0 && tangent.amount < 0.12 && !tangent.ready);
+      assert.equal(model.pullPose(promoted, 72, -fx, -fy).amount, 0);
     }
   }
 }
+// Same opening and pull length, different sheet orientation.
+const [whole] = model.peelPieces(model.wholeRindPattern, 0, 100, 153);
+const axis = model.peelAxis(whole, 100, 153, 0, -1, true);
+const pose = model.pullPose(axis, 36, axis.pullX, axis.pullY);
+const curled = model.peelFrame(whole, pose.amount, axis, pose);
+const flat = model.peelFrame(whole, pose.amount, axis, { ...pose, x: 1, y: 0 });
+assert.equal(curled.exposed, flat.exposed);
+assert.deepEqual(Array.from(curled.bands.filter(b => b.path), b => b.pith), [false, true]);
+assert.deepEqual(Array.from(flat.bands.filter(b => b.path), b => b.pith), [false]);
+const vertices = band => band.path.match(/-?[\d.]+ -?[\d.]+/g) || [];
+const pithVertices = new Set(vertices(curled.bands[1]));
+assert(new Set(vertices(curled.bands[0]).filter(p => pithVertices.has(p))).size >= 2,
+  'the exposed faces must share the same fold endpoints');
+assert(curled.bands[0].pores && curled.bands[1].marks);
+assert(!curled.bands[0].marks && !curled.bands[1].pores && !curled.bands[1].lights);
+
+const crownAxis = model.peelAxis(whole, 100, 62, 0, -1, true);
+const crownPose = model.pullPose(crownAxis, 76, crownAxis.pullX, crownAxis.pullY);
+const crownFrame = model.peelFrame(whole, crownPose.amount, crownAxis, crownPose);
+const projected = crownFrame.bands.flatMap(band => vertices(band).map(point => point.split(' ').map(Number)));
+function spanAlong(points, direction) {
+  const distances = points.map(p => model.peelLocal(direction, p)[0]);
+  return Math.max(...distances) - Math.min(...distances);
+}
+assert(spanAlong(projected, crownAxis) < 0.65 * spanAlong(crownFrame.exposedPoints, crownAxis),
+  'at release the curl must uncover the flesh instead of lying across the opening');
+
+const far = model.pullPose(axis, 440, axis.pullX, axis.pullY);
+const farther = model.pullPose(axis, 880, axis.pullX, axis.pullY);
+const longDrag = model.peelFrame(whole, far.amount, axis, far);
+const longerDrag = model.peelFrame(whole, farther.amount, axis, farther);
+assert(Math.hypot(longDrag.tip[0] - longerDrag.tip[0], longDrag.tip[1] - longerDrag.tip[1]) < 2,
+  'a taut peel should stop stretching');
+const landed = model.peelFrame(whole, 1, axis, far);
+assert(Math.hypot(landed.tip[0] - longDrag.tip[0], landed.tip[1] - longDrag.tip[1]) > 5,
+  'the peel should relax before it lands');
+
+const sections = model.peelPieces(3, 0, 100, 153, 0.25);
+const axes = sections.map(piece => model.peelAxis(piece, piece.cx, piece.cy, 1, 0))
+  .sort((a, b) => a.reach - b.reach);
+const small = axes[0], large = axes[axes.length - 1];
+const effort = 4 + (small.reach + large.reach) / 2;
+assert(model.pullPose(small, effort, small.pullX, small.pullY).ready);
+assert(!model.pullPose(large, effort, large.pullX, large.pullY).ready);
+const forward = (distance, angle = 0) => model.pullPose(large, distance,
+  large.pullX * Math.cos(angle) - large.pullY * Math.sin(angle),
+  large.pullY * Math.cos(angle) + large.pullX * Math.sin(angle));
+const advances = [8, 16, effort, 60].map(distance => forward(distance).amount);
+assert(advances.every((amount, i) => i === 0 || advances[i - 1] < amount));
+const turns = [0, 0.15, 0.6, 1, Math.PI / 2, 2, Math.PI].map(angle => forward(effort, angle).amount);
+assert(turns.every((amount, i) => i === 0 || turns[i - 1] > amount));
+assert(turns[0] - turns[1] < 0.08 && turns[turns.length - 1] === 0);
+console.log('Press origin, whole-rind continuity, adaptive resistance and smooth directional pulling checks passed.');

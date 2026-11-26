@@ -27,7 +27,8 @@ Item {
   property int peeledMask: 0
   property int activePeel: -1
   property point peelGrab: Qt.point(0, 0)
-  property var pullPose: ({ amount: 0, distance: 0, x: 0, y: 0, ready: false })
+  property double peelMotionStartedAt: 0
+  property var pullPose: ({ amount: 0, bend: 0, lateral: 0, x: 0, y: 0, ready: false })
   property real settleProgress: 0
   readonly property real peelProgress: gesture === "peel" ? pullPose.amount : settleProgress
   property real peelTarget: 0
@@ -66,7 +67,8 @@ Item {
     if (activePeel < 0 || !peelAxis) return null;
     var pose = pullPose;
     var amount = gesture === "peel" ? pose.amount : settleProgress;
-    return amount > 0 ? Model.peelFrame(pieces[activePeel], amount, peelAxis, pose) : null;
+    return amount > 0 ? Model.peelFrame(peelAxis.piece, amount, peelAxis, pose,
+      peeledMask === 0 && amount < 1 ? intactSurface : null) : null;
   }
   readonly property real artScale: Math.max(0.1, Math.min(1, width / 220, height / 250))
   readonly property real centerX: width / 2
@@ -75,6 +77,9 @@ Item {
   readonly property string bodyPath: Model.path(bodyOutline)
   readonly property var bodyTexture: Model.rindTexture(bodyOutline)
   readonly property string bodyShine: Model.rindDetails(bodyOutline, []).shinePath
+  readonly property var intactSurface: ({ path: bodyPath, texture: bodyTexture,
+    details: Model.rindDetails(bodyOutline, []) })
+  readonly property bool firstTear: peeledMask === 0 && activePeel >= 0 && peelProgress > 0 && peelProgress < 1
   readonly property bool showingWhole: peeledMask === 0 && peelProgress === 0
   readonly property int crownPiece: patternChosen ? Model.hitPeel(pieces, 0, 100, 56) : -1
 
@@ -133,7 +138,8 @@ Item {
       if (index < 0) { pattern = -1; return false; }
     }
     peelGrab = Qt.point(x, y);
-    pullPose = { amount: 0, distance: 0, x: 0, y: 0, ready: false };
+    peelMotionStartedAt = 0;
+    pullPose = { amount: 0, bend: 0, lateral: 0, x: 0, y: 0, ready: false };
     peelAxis = null;
     peelTarget = 0;
     settleProgress = 0;
@@ -146,15 +152,27 @@ Item {
     var dx = current.x - start.x, dy = current.y - start.y;
     var distance = Math.hypot(dx, dy);
     if (distance <= 4) {
-      peelAxis = null;
-      pullPose = { amount: 0, distance: 0, x: 0, y: 0, ready: false };
+      if (peelMotionStartedAt > 0) peelMotionStartedAt = 0;
+      pullPose = { amount: 0, bend: 0, lateral: 0, x: 0, y: 0, ready: false };
       return;
     }
-    if (!peelAxis && distance < 6) return;
     var xDirection = dx / distance, yDirection = dy / distance;
-    // The tear stays on the same seam. The free end can turn with the mouse.
+    if (!peelAxis && distance < 6) return;
     if (!peelAxis)
       peelAxis = Model.peelAxis(pieces[activePeel], peelGrab.x, peelGrab.y, xDirection, yDirection);
+    if (peeledMask === 0 && pattern !== Model.wholeRindPattern && peelMotionStartedAt >= 0) {
+      var now = Date.now();
+      if (peelMotionStartedAt === 0) peelMotionStartedAt = now;
+      // Measure motion after the grab. Once the tear is underway, keep its layout.
+      if (distance > 24) peelMotionStartedAt = -1;
+      else if (distance >= 12 && now - peelMotionStartedAt >= 240 && peelAxis &&
+          Model.pullPose(peelAxis, distance, xDirection, yDirection).amount > 0) {
+        var started = peelAxis;
+        pattern = Model.wholeRindPattern;
+        activePeel = 0;
+        peelAxis = Model.fitPeel(started, pieces[0], true);
+      }
+    }
     pullPose = Model.pullPose(peelAxis, distance, xDirection, yDirection);
   }
   function refreshHover() {
@@ -162,11 +180,7 @@ Item {
       ? hitAt(pointer.mouseX, pointer.mouseY) : -1;
   }
   function finishDrop() {
-    if (dropping >= 0) {
-      var next = landed.slice();
-      next[dropping] = dropFrame;
-      landed = next;
-    }
+    if (dropping >= 0) landed = landed.concat({ piece: dropping, frame: dropFrame });
     dropping = -1;
     dropFrame = null;
     dropProgress = 0;
@@ -209,7 +223,8 @@ Item {
     } else {
       peelSettle.from = settleProgress;
       peelSettle.to = target;
-      peelSettle.duration = Math.round(animationDuration * (target === 1 ? 0.34 : 0.25 + 0.4 * settleProgress));
+      var releaseTime = pattern === Model.wholeRindPattern ? 0.9 : 0.34;
+      peelSettle.duration = Math.round(animationDuration * (target === 1 ? releaseTime : 0.25 + 0.4 * settleProgress));
       peelSettle.restart();
     }
   }
@@ -310,7 +325,7 @@ Item {
     var start = patternChosen ? [pieces[index].cx, pieces[index].cy] : keyboardStarts[index];
     if (!beginPeel(index, start[0], start[1])) return;
     peelAxis = Model.peelAxis(pieces[activePeel], peelGrab.x, peelGrab.y);
-    pullPose = Model.pullPose(peelAxis, 60, -peelAxis.ux, -peelAxis.uy);
+    pullPose = Model.pullPose(peelAxis, 60, peelAxis.pullX, peelAxis.pullY);
     animatePeel(1);
   }
   onInteractiveChanged: if (!interactive) {
@@ -373,11 +388,10 @@ Item {
     x: root.centerX - 100; y: root.centerY - 100
     scale: root.artScale * (0.96 + root.arrival * 0.04)
     opacity: root.arrival
-    // Tiny compression acknowledges a tug without moving the fruit's anchor.
     transform: Scale {
       origin.x: 100; origin.y: 100
-      xScale: root.fruitStyle.width * (root.gesture === "peel" ? 1.025 : 1)
-      yScale: root.fruitStyle.height * (root.gesture === "peel" ? 0.98 : 1)
+      xScale: root.fruitStyle.width
+      yScale: root.fruitStyle.height
       Behavior on xScale { NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic } }
       Behavior on yScale { NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic } }
     }
@@ -402,27 +416,26 @@ Item {
         }
 
         Repeater {
-          model: root.pieces.length
+          model: root.landed
           delegate: PeelFlap {
             id: fallen
-            required property int index
-            frame: root.landed[index] || null
+            required property var modelData
+            frame: modelData.frame
             rindColor: root.rindColor
             fibreOpacity: 0
             groundContact: 1
-            visible: frame !== null
-            readonly property var pose: Model.pilePose(index)
-            x: frame ? pose[0] - frame.cx : 0
-            y: frame ? pose[1] - frame.cy : 0
+            readonly property var pose: Model.pilePose(modelData.piece)
+            x: pose[0] - frame.cx
+            y: pose[1] - frame.cy
             transform: [
-              Scale { origin.x: fallen.frame ? fallen.frame.cx : 0; origin.y: fallen.frame ? fallen.frame.cy : 0; xScale: 0.51; yScale: 0.39 },
-              Rotation { origin.x: fallen.frame ? fallen.frame.cx : 0; origin.y: fallen.frame ? fallen.frame.cy : 0; angle: fallen.pose[2] }
+              Scale { origin.x: fallen.frame.cx; origin.y: fallen.frame.cy; xScale: 0.51; yScale: 0.55 },
+              Rotation { origin.x: fallen.frame.cx; origin.y: fallen.frame.cy; angle: fallen.pose[2] }
             ]
           }
         }
 
         Shape {
-          visible: !root.fullyPeeled && !root.showingWhole
+          visible: !root.fullyPeeled
           ShapePath {
             fillColor: "#f7dba5"; strokeColor: "transparent"
             PathSvg { path: root.bodyPath }
@@ -451,7 +464,7 @@ Item {
             readonly property bool uncovered: !front && (root.eaten & (1 << (index + 4))) !== 0
             readonly property bool edgeLeft: uncovered || (column > 0 && (root.eaten & (1 << (index - 1))) !== 0)
             readonly property bool edgeRight: uncovered || (column < 3 && (root.eaten & (1 << (index + 1))) !== 0)
-            visible: !root.showingWhole && (!(root.eaten & (1 << index)) || leaving)
+            visible: !(root.eaten & (1 << index)) || leaving
             x: root.fullyPeeled ? piece.dx : 0
             y: (root.fullyPeeled ? piece.dy : 0) - (leaving ? root.fade * 13 : 0)
             opacity: leaving ? 1 - root.fade : 1
@@ -462,7 +475,7 @@ Item {
             }
             FleshSurface {
               highlighted: segmentArt.picked || segmentArt.keyboardTarget
-                || (root.keyboardIndex < 0 && root.hovered === segmentArt.index)
+                || (root.fullyPeeled && root.keyboardIndex < 0 && root.hovered === segmentArt.index)
               offsetX: segmentArt.x
               offsetY: segmentArt.y
               strokeColor: segmentArt.picked || segmentArt.keyboardTarget ? "#ffd776" : "#35b4672d"
@@ -509,8 +522,9 @@ Item {
             required property var modelData
             required property int index
             readonly property var movingFrame: root.activePeel === index ? root.peelFrame : null
-            visible: !root.showingWhole && !(root.peeledMask & (1 << index))
+            visible: !root.showingWhole && !root.firstTear && !(root.peeledMask & (1 << index))
             RindSurface {
+              fillRule: ShapePath.OddEvenFill
               strokeColor: root.keyboardIndex === index ? "#fff5d3" : root.rindColor
               strokeWidth: root.keyboardIndex === index ? 2 : 0.7
               joinStyle: ShapePath.RoundJoin
@@ -550,34 +564,37 @@ Item {
         }
 
         Shape {
-          visible: root.showingWhole
+          id: intact
+          readonly property var frame: root.firstTear ? root.peelFrame : null
+          visible: root.showingWhole || root.firstTear
           RindSurface {
+            fillRule: ShapePath.OddEvenFill
             strokeColor: "#b96a30"; strokeWidth: 1.7
-            PathSvg { path: root.bodyPath }
+            PathSvg { path: intact.frame ? intact.frame.attached : root.bodyPath }
           }
           ShapePath {
             fillColor: "#d88739"; strokeColor: "transparent"
-            PathSvg { path: root.bodyTexture.pores }
+            PathSvg { path: intact.frame ? intact.frame.pores : root.bodyTexture.pores }
           }
           ShapePath {
             fillColor: "#ffd28b"; strokeColor: "transparent"
-            PathSvg { path: root.bodyTexture.lights }
+            PathSvg { path: intact.frame ? intact.frame.lights : root.bodyTexture.lights }
           }
           ShapePath {
             fillColor: "transparent"; strokeColor: "#ffd99a"; strokeWidth: 3.6
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
-            PathSvg { path: root.bodyShine }
+            PathSvg { path: intact.frame ? intact.frame.rindShine : root.bodyShine }
           }
         }
 
         Shape {
           x: 100; y: 49
           visible: root.crownPiece < 0 ? root.peeledMask === 0 : !(root.peeledMask & (1 << root.crownPiece))
-          opacity: root.activePeel >= 0 && root.activePeel === root.crownPiece ? 1 - root.peelProgress : 1
+          readonly property real lifted: root.activePeel === root.crownPiece && root.peelFrame ? root.peelFrame.crownLift : 0
+          opacity: 1 - lifted
           transform: Scale { xScale: root.stemStyle.leafX; yScale: root.stemStyle.leafY }
-          rotation: root.stemStyle.tilt + (root.activePeel >= 0 && root.activePeel === root.crownPiece
-            ? -root.peelProgress * 24 : 0)
+          rotation: root.stemStyle.tilt - lifted * 24
           Behavior on rotation { NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic } }
           ShapePath {
             fillColor: "#737a3e"; strokeColor: "transparent"
@@ -629,7 +646,7 @@ Item {
               origin.x: falling.frame ? falling.frame.cx : 0
               origin.y: falling.frame ? falling.frame.cy : 0
               xScale: 1 - falling.fall * 0.49 + falling.impact * 0.025
-              yScale: 1 - falling.fall * 0.61 - falling.impact * 0.045
+              yScale: 1 - falling.fall * 0.45 - falling.impact * 0.045
             },
             Rotation { origin.x: falling.frame ? falling.frame.cx : 0; origin.y: falling.frame ? falling.frame.cy : 0; angle: falling.pose[2] * falling.fall }
           ]

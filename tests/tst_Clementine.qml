@@ -206,7 +206,8 @@ Rectangle {
         compare(fruit.landed.length, 0);
       } else {
         compare(fruit.peeledMask, 1 << index);
-        verify(fruit.landed[index].underside.length > 0);
+        compare(fruit.landed[0].piece, index);
+        verify(fruit.landed[0].frame.bands.some(b => b.path.length > 0));
       }
       fruit.animationDuration = 0;
       fruit.interactive = true;
@@ -301,7 +302,7 @@ Rectangle {
       mouseMove(fruit, end.x, end.y);
       verify(fruit.peelFrame !== null);
       verify(fruit.peelFrame.attached.length > 0);
-      verify(fruit.peelFrame.underside.length > 0);
+      verify(fruit.peelFrame.bands.some(b => b.path.length > 0));
       verify(fruit.peelFrame.fibres.length > 0);
       compare(fruit.peelRemaining, fruit.pieces.length);
       compare(fruit.peeledMask, 0);
@@ -313,10 +314,11 @@ Rectangle {
       fruit.animationDuration = 120;
       takePiece();
       tryVerify(function() { return fruit.dropping >= 0; }, 2000);
-      var id = fruit.dropping, shape = fruit.dropFrame.underside;
+      var id = fruit.dropping, shape = fruit.dropFrame.bands;
       verify(shape.length > 0);
       tryCompare(fruit, "busy", false, 2000);
-      compare(fruit.landed[id].underside, shape);
+      compare(fruit.landed[0].piece, id);
+      compare(fruit.landed[0].frame.bands, shape);
       compare(fruit.dropping, -1);
       verify(landing.count > 0, "The rind should settle after hitting the pile");
       fruit.animationDuration = 0;
@@ -324,6 +326,16 @@ Rectangle {
       takePiece();
       compare(fruit.dropping, -1);
       compare(landing.count, 0);
+    }
+    function test_peel_pile_keeps_landing_order() {
+      setVariation({ shape: 0 });
+      fruit.startPoint = Qt.point(100, 108);
+      fruit.pattern = Model.patternAtStart(100, 108);
+      fruit.keyboardIndex = 1;
+      fruit.keyboardAction();
+      fruit.keyboardIndex = 0;
+      fruit.keyboardAction();
+      compare(fruit.landed.map(peel => peel.piece), [1, 0]);
     }
     function test_automatic_renewal() {
       fruit.renewDelay = 80;
@@ -359,7 +371,7 @@ Rectangle {
 
     function pullTarget(x, y, distance) {
       var axis = Model.peelAxis(fruit.pieces[fruit.activePeel], x, y);
-      return pixel(x - axis.ux * distance, y - axis.uy * distance);
+      return pixel(x + axis.pullX * distance, y + axis.pullY * distance);
     }
     function pullFrom(x, y, distance) {
       var p = pixel(x, y);
@@ -370,16 +382,16 @@ Rectangle {
       mouseRelease(fruit, end.x, end.y, Qt.LeftButton);
     }
     function test_initial_drag_sets_direction_and_reverses() {
-      setVariation({ shape: 0 });
+      setVariation({ shape: 0, tearSeed: 0.25 });
       var p = pixel(36, 108);
       mousePress(fruit, p.x, p.y, Qt.LeftButton);
-      var inward = pullTarget(36, 108, -36), outward = pullTarget(36, 108, 28);
+      var inward = pixel(72, 108), outward = pixel(8, 108);
       mouseMove(fruit, inward.x, inward.y);
-      verify(fruit.peelProgress > 0.3);
+      verify(fruit.peelProgress > 0);
       mouseMove(fruit, p.x, p.y);
       compare(fruit.peelProgress, 0);
       mouseMove(fruit, outward.x, outward.y);
-      verify(fruit.peelProgress > 0.3);
+      compare(fruit.peelProgress, 0);
       mouseMove(fruit, p.x, p.y);
       compare(fruit.peelProgress, 0);
       mouseRelease(fruit, p.x, p.y, Qt.LeftButton);
@@ -387,28 +399,49 @@ Rectangle {
       compare(fruit.peeledMask, 0);
 
       mousePress(fruit, p.x, p.y, Qt.LeftButton);
-      var fullPull = pullTarget(36, 108, -80);
+      var fullPull = pixel(-44, 108);
       mouseMove(fruit, fullPull.x, fullPull.y);
       mouseRelease(fruit, fullPull.x, fullPull.y, Qt.LeftButton);
       compare(fruit.peelRemaining, fruit.pieces.length - 1);
     }
-    function test_drag_can_turn_past_its_starting_direction() {
+    function test_outward_pull_works_near_crown_seam() {
+      setVariation({ shape: 0, tearSeed: 0 });
+      var grab = pixel(77, 74), inward = pixel(121, 139), outward = pixel(33, 9);
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      mouseMove(fruit, outward.x, outward.y);
+      verify(fruit.pullPose.ready);
+      mouseMove(fruit, inward.x, inward.y);
+      compare(fruit.peelProgress, 0);
+      mouseMove(fruit, outward.x, outward.y);
+      mouseRelease(fruit, outward.x, outward.y, Qt.LeftButton);
+      compare(fruit.peelRemaining, fruit.pieces.length - 1);
+    }
+    function test_drag_can_turn_sideways_and_close_on_reversal() {
       setVariation({ shape: 0 });
       var grab = pixel(36, 108);
       mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
       var points = [pixel(14, 108), pixel(36, 164), pixel(92, 108)];
       mouseMove(fruit, points[0].x, points[0].y);
       verify(fruit.peelProgress > 0);
+      var forwardProgress = fruit.peelProgress;
       var hinge = fruit.peelAxis.tip;
+      var diagonal = pixel(14, 131);
+      mouseMove(fruit, diagonal.x, diagonal.y);
+      verify(Math.abs(fruit.peelProgress - forwardProgress) < 0.06);
       mouseMove(fruit, points[1].x, points[1].y);
-      verify(fruit.peelProgress >= 0.72);
-      var progress = fruit.peelProgress;
+      verify(fruit.peelProgress > 0 && fruit.peelProgress < forwardProgress);
+      verify(!fruit.pullPose.ready);
       mouseMove(fruit, points[2].x, points[2].y);
-      verify(Math.abs(fruit.peelProgress - progress) < 0.03);
+      compare(fruit.peelProgress, 0);
+      mouseMove(fruit, grab.x, grab.y);
+      mouseMove(fruit, points[2].x, points[2].y);
       compare(fruit.peelAxis.tip[0], hinge[0]);
       compare(fruit.peelAxis.tip[1], hinge[1]);
+      compare(fruit.peelProgress, 0);
+      verify(!fruit.pullPose.ready);
       mouseRelease(fruit, points[2].x, points[2].y, Qt.LeftButton);
-      compare(fruit.peelRemaining, fruit.pieces.length - 1);
+      compare(fruit.peeledMask, 0);
+      verify(!fruit.patternChosen);
     }
     function test_grip_lifts_at_cursor_and_ready_peel_waits_for_release() {
       setVariation({ shape: 0 });
@@ -416,7 +449,7 @@ Rectangle {
       var lift = pixel(110, 108);
       mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
       mouseMove(fruit, lift.x, lift.y);
-      verify(fruit.peelFrame.pinch.length > 0);
+      verify(fruit.peelFrame.exposedPoints.length > 2);
       verify(!fruit.pullPose.ready);
       mouseRelease(fruit, lift.x, lift.y, Qt.LeftButton);
       compare(fruit.peeledMask, 0);
@@ -435,7 +468,8 @@ Rectangle {
       var index = fruit.activePeel;
       mouseRelease(fruit, pull.x, pull.y, Qt.LeftButton);
       compare(fruit.peeledMask, 1 << index);
-      compare(fruit.landed[index].fibres, "");
+      compare(fruit.landed[0].piece, index);
+      compare(fruit.landed[0].frame.fibres, "");
     }
 
     function test_can_grab_during_drop() {
@@ -482,10 +516,130 @@ Rectangle {
       compare(fruit.pattern, pattern);
       verify(JSON.stringify(fruit.pieces) !== layout);
     }
-    function test_cancelled_start_can_choose_another_pattern() {
-      pullFrom(100, 62, 5);
+    function test_bottom_grab_only_opens_near_the_hand() {
+      setVariation({ shape: 0, rind: 0, stem: 0, tearSeed: 0.25 });
+      var grab = pixel(100, 153), end = pixel(100, 135);
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      waitForRendering(fruit);
+      var before = grabImage(fruit);
+      mouseMove(fruit, end.x, end.y);
+      verify(waitForRendering(fruit));
+      var after = grabImage(fruit);
+      mouseRelease(fruit, end.x, end.y, Qt.LeftButton);
+      function changed(x, y) {
+        var at = pixel(x, y);
+        var px = Math.round(at.x), py = Math.round(at.y);
+        return !Qt.colorEqual(before.pixel(px, py), after.pixel(px, py));
+      }
+      var localChanges = 0;
+      for (var x = 90; x <= 110; x++)
+        for (var y = 127; y <= 157; y++) if (changed(x, y)) localChanges++;
+      verify(localChanges > 8, "The renderer must draw a visible opening at the bottom grab");
+      for (var x = 84; x <= 128; x += 2)
+        for (var y = 28; y <= 85; y += 2)
+          verify(!changed(x, y), "The leaf and upper rind must stay still on first lift at " + x + ", " + y);
+    }
+    function test_grab_then_sweep_data() {
+      return [{ tag: "bottom", x: 100, y: 153, dx: 0, dy: -1 },
+        { tag: "top", x: 100, y: 62, dx: 0, dy: 1 },
+        { tag: "left", x: 39, y: 108, dx: 1, dy: 0 },
+        { tag: "right", x: 160, y: 108, dx: -1, dy: 0 }];
+    }
+    function test_grab_then_sweep(row) {
+      setVariation({ shape: 0, rind: 0, stem: 0, tearSeed: 0.25 });
+      var grab = pixel(row.x, row.y);
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      var lastProgress = 0;
+      for (var distance of [8, 13, 18, 22, 44]) {
+        var cursor = pixel(row.x + distance * row.dx, row.y + distance * row.dy);
+        mouseMove(fruit, cursor.x, cursor.y);
+        var frame = fruit.peelFrame;
+        verify(frame !== null);
+        if (distance === 8) {
+          verify(frame.exposedPoints.every(p => Math.hypot(p[0] - row.x, p[1] - row.y) < 8));
+          if (row.tag === "bottom") compare(frame.crownLift, 0);
+        }
+        verify(fruit.peelProgress > lastProgress);
+        lastProgress = fruit.peelProgress;
+        if (distance <= 18) wait(90);
+      }
+      compare(fruit.pattern, Model.wholeRindPattern);
+      var side = pixel(row.x - 44 * row.dy, row.y + 44 * row.dx);
+      mouseMove(fruit, side.x, side.y);
+      verify(fruit.peelProgress > 0 && fruit.peelProgress < lastProgress);
+      verify(!fruit.pullPose.ready);
+      mouseRelease(fruit, side.x, side.y, Qt.LeftButton);
+      compare(fruit.peeledMask, 0);
+    }
+    function test_slow_pull_can_peel_whole_rind_data() {
+      return [{ tag: "side", margins: 0, shape: 0, x: 75, y: 108, dx: -1, dy: 0 },
+        { tag: "crown_compact", margins: 145, shape: 1, x: 103, y: 76, dx: 0, dy: -1 }];
+    }
+    function test_slow_pull_can_peel_whole_rind(data) {
+      fruit.anchors.margins = data.margins;
+      setVariation({ shape: data.shape });
+      function pointAt(distance) {
+        return pixel(data.x + data.dx * distance, data.y + data.dy * distance);
+      }
+      function startSlowly() {
+        for (var distance of [7, 12, 17, 22]) {
+          var point = pointAt(distance);
+          mouseMove(fruit, point.x, point.y);
+          if (distance < 22) wait(85);
+        }
+        compare(fruit.pattern, Model.wholeRindPattern);
+        verify(!fruit.pullPose.ready);
+      }
+      var grab = pointAt(0), shortPull = pointAt(22), normalPull = pointAt(61), longPull = pointAt(78);
+
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      startSlowly();
+      mouseRelease(fruit, shortPull.x, shortPull.y, Qt.LeftButton);
       verify(!fruit.patternChosen);
       compare(fruit.peeledMask, 0);
+
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      wait(260);
+      mouseMove(fruit, normalPull.x, normalPull.y);
+      mouseRelease(fruit, normalPull.x, normalPull.y, Qt.LeftButton);
+      verify(fruit.pattern !== Model.wholeRindPattern);
+      compare(fruit.peelRemaining, fruit.pieces.length - 1);
+
+      fruit.reset();
+      setVariation({ shape: data.shape });
+      fruit.animationDuration = 160;
+      mousePress(fruit, grab.x, grab.y, Qt.LeftButton);
+      startSlowly();
+      mouseMove(fruit, normalPull.x, normalPull.y);
+      verify(!fruit.pullPose.ready);
+      mouseMove(fruit, longPull.x, longPull.y);
+      verify(fruit.pullPose.ready);
+      verify(!fruit.fullyPeeled);
+      var reverse = pointAt(-78);
+      mouseMove(fruit, grab.x, grab.y);
+      mouseMove(fruit, reverse.x, reverse.y);
+      compare(fruit.peelProgress, 0);
+      verify(!fruit.pullPose.ready);
+      mouseMove(fruit, longPull.x, longPull.y);
+      verify(fruit.pullPose.ready);
+      mouseRelease(fruit, longPull.x, longPull.y, Qt.LeftButton);
+      tryCompare(fruit, "fullyPeeled", true);
+      tryCompare(fruit, "busy", false);
+      compare(fruit.landed.length, 1);
+      compare(fruit.remaining, 8);
+      var slice = pixel(122, 76);
+      mouseClick(fruit, slice.x, slice.y, Qt.LeftButton);
+      compare(fruit.remaining, 7);
+    }
+    function test_cancelled_start_can_choose_another_pattern() {
+      verify(fruit.beginPeel(0, 100, 62));
+      var layout = JSON.stringify(fruit.pieces);
+      fruit.animatePeel(0);
+      verify(!fruit.patternChosen);
+      compare(fruit.peeledMask, 0);
+      verify(fruit.beginPeel(0, 100, 62));
+      compare(JSON.stringify(fruit.pieces), layout);
+      fruit.animatePeel(0);
       pullFrom(36, 108, 70);
       compare(fruit.pattern, 0);
     }
